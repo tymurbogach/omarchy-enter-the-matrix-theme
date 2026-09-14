@@ -40,6 +40,7 @@ omarchy-matrix status            # what is on right now
 omarchy-matrix wallpaper off     # any piece: wallpaper screensaver lock boot widget
 omarchy-matrix boot on
 omarchy-matrix doctor            # assert everything again
+omarchy-matrix update            # pull the latest version, then doctor
 ```
 
 | Piece | What it is |
@@ -48,7 +49,7 @@ omarchy-matrix doctor            # assert everything again
 | `screensaver` | Rain when you go idle, on your `shell.json` idle timing. It behaves like Omarchy's own: the pointer is hidden, the mouse does not dismiss it, any key does. |
 | `lock` | Rain behind the password field. Derived from your own lock, never shipped as a copy, so Omarchy's PAM and fingerprint flows keep arriving. |
 | `boot` | The screen before login, typing out the four lines from the film — and two more on the way out, different for a shutdown and for a reboot. Needs your password and rebuilds the initramfs, so it never applies on its own. |
-| `widget` | The Matrix icon on the bar: the four switches above with a ✓ each, plus Repair and Uninstall. Lives in its own repo, [omarchy-matrix-widget](https://github.com/tymurbogach/omarchy-matrix-widget), fetched automatically by `install.sh`. |
+| `widget` | The Matrix icon on the bar: the four switches above with a ✓ each, plus Repair and Uninstall, and Update when a newer version is out. The panel's title carries the version you run. Lives in its own repo, [omarchy-matrix-widget](https://github.com/tymurbogach/omarchy-matrix-widget), fetched automatically by `install.sh`. |
 
 The desktop rain is one more background in the carousel, `1-live-rain`.
 `omarchy-matrix wallpaper on` selects it for you.
@@ -140,7 +141,7 @@ ordinary Omarchy theme.
 ## Requirements
 
 Omarchy 4.0.3, `jq`, `git`, `python3`, and network for the first install (the
-widget is fetched once, then pinned). The boot splash additionally needs
+widget is fetched once, then pinned) and for updates. The boot splash additionally needs
 ImageMagick and `sudo`, and only when you ask for it.
 
 ## What it touches on your system
@@ -157,6 +158,7 @@ background, nor the bar:
 ~/.config/omarchy/shell.json                                              one entry in the bar layout
 ~/.local/bin/omarchy-matrix                                               link to the share dir
 ~/.local/share/omarchy-matrix/{bin,lib,provider.json,uninstall.sh}        the pack itself
+~/.cache/omarchy-matrix/update.json                                       the last update check
 ~/.config/omarchy/plugins/<username>.lock                                 only while `lock` is on
 /usr/share/plymouth/themes/omarchy-matrix/                                only while `boot` is on
 ```

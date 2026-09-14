@@ -15,7 +15,7 @@
   ],
 
   "slug": "enter-the-matrix",
-  "displayName": "Matrix",
+  "displayName": "Enter the Matrix",
   "cli": "omarchy-matrix",
   "//ipc": "The IpcHandler target the service registers; `omarchy-shell <ipc> ...`.",
   "ipc": "matrix",
@@ -46,7 +46,7 @@
       "for\" in CONTRIBUTING.md."
     ],
     "repo": "https://github.com/tymurbogach/omarchy-matrix-widget",
-    "ref": "3477c5ad8da5246cf05b390a4f91ccf4ed9d403c",
+    "ref": "92218f027b59e38fffc5ea5ede9aab830096cdb5",
     "files": ["manifest.json", "Panel.qml"],
     "section": "right"
   },

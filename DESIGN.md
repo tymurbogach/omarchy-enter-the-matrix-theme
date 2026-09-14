@@ -214,10 +214,29 @@ The one document the widget reads, and the one definition of the ✓. Fields:
 |---|---|
 | `schema` | The protocol version, currently 1. Readers take 1 and reject anything else, so either side can grow without silent misreads. |
 | `name`, `slug` | The provider's display name and theme slug, from `provider.json`. |
+| `version` | The version of the theme folder, from its `manifest.json`. Empty when the folder is gone. |
 | `theme` | The current theme, from Omarchy's state directory. |
 | `active` | Whether the pack is in effect: the current theme is ours. `boot` is exempt, since the splash belongs to the system. |
 | `settings` | What was asked for, per piece, from the pack's own settings file. |
 | `pieces` | What is happening now, per piece: asked for AND in effect AND applied (the live background selected, the plugin enabled, our lock in charge, our splash installed). |
+
+### update --check --json
+
+What the widget asks when its panel opens. It is apart from `status` because
+it can reach GitHub, and `status` has to stay instant. The CLI keeps the
+answer for six hours in `~/.cache/omarchy-matrix/update.json`, keyed on the
+commit of the theme folder.
+
+| Field | What it is |
+|---|---|
+| `schema` | 1, as for `status`. |
+| `current` | The version of the theme folder. |
+| `latest` | The version on GitHub. Empty when there is nothing to offer. |
+| `available` | `true` only when the theme folder can fast-forward to a newer commit. No network, no git clone, or commits of your own all give `false`. |
+
+`omarchy-matrix update` pulls with `--ff-only` from the repository URL written
+out in the command, then runs `doctor` from the pulled theme. The URL is
+literal on purpose: see the updates section of `bin/omarchy-matrix`.
 
 ### About the borders
 

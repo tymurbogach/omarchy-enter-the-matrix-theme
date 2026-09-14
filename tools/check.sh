@@ -131,6 +131,13 @@ if manifest.get("license") != "MIT":
     bad(f"manifest license is {manifest.get('license')!r}, want 'MIT'")
 if not (root / "LICENSE").is_file():
     bad("LICENSE is missing")
+# The update pulls from a URL written out in the CLI, not read from the
+# provider: see the updates section of bin/omarchy-matrix for why. It must stay
+# the provider's own repository.
+cli = (root / "bin" / "omarchy-matrix").read_text()
+urls = re.findall(r'git -C "\$dir" (?:fetch --quiet|pull --ff-only) (\S+) ', cli)
+if len(urls) != 2 or set(urls) != {provider["repoUrl"]}:
+    bad(f"the update URLs in bin/omarchy-matrix are {urls}, want {provider['repoUrl']} twice")
 for message in errors:
     print(f"  FAIL: {message}")
 sys.exit(1 if errors else 0)

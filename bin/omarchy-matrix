@@ -6,6 +6,7 @@
 #   <cli> wallpaper|screensaver|lock|boot|widget on|off|toggle
 #   <cli> status [--is <piece>] [--json]
 #   <cli> doctor
+#   <cli> update [--check [--json]]
 #
 # Which pack this is comes from provider.json, below: everything in here is
 # machinery, and the provider contributes the shader, its assets and its names.
@@ -259,6 +260,101 @@ sync_files() {
   files_outdated "$theme" || return 0
   echo "  the theme directory has moved on; refreshing the pack's copies"
   "$theme/install.sh" --sync || echo "  could not refresh them; run $theme/install.sh" >&2
+}
+
+# --- updates ----------------------------------------------------------------
+#
+# The theme updates from its own repository and from nowhere else, and only
+# when you ask: `update --check` looks, `update` pulls.
+#
+# The URL is written out in the two git commands below, not read from
+# provider.json like every other name in this file. The marketplace's security
+# baseline accepts a pull whose result later runs only when the command itself
+# names the submission's own repository (commandUsesOnlySubmissionRepository in
+# its scripts/security-baseline-analysis.mjs). Behind a variable it sees no URL
+# and reports unpinned remote code. tools/check.sh keeps both URLs equal to
+# provider.json's repoUrl.
+#
+# `omarchy theme update` is not used: it pulls every git theme you have, not
+# only this one.
+
+UPDATE_CACHE="$HOME/.cache/$CLI/update.json"
+UPDATE_MAX_AGE=21600 # six hours: an open panel must not ask GitHub every time
+
+# The version of the theme folder. doctor syncs the pack to it on the next
+# `omarchy theme set`, so this is the version you run.
+pack_version() {
+  local dir
+  dir=$(theme_dir) || return 0
+  jq -r '.version // ""' "$dir/manifest.json" 2>/dev/null || true
+}
+
+update_document() { # <current> <latest> <available>
+  jq -nc --argjson schema 1 --arg current "$1" --arg latest "$2" --argjson available "$3" \
+    '{schema: $schema, current: $current, latest: $latest, available: $available}'
+}
+
+# Never fails. No network, a theme folder that is not a git clone, or a clone
+# with commits of its own all mean "no update to offer": a clone that has moved
+# on by itself is somebody's working copy, and pulling into it is their call.
+cmd_update_check() {
+  local json=0 dir head="" current latest="" available=false looked=0 now document
+  [[ ${1:-} == --json ]] && json=1
+  dir=$(theme_dir) || dir=""
+  current=$(pack_version)
+  if [[ -n $dir && -e $dir/.git ]]; then
+    head=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || head=""
+  fi
+  now=$(date +%s)
+  # An answer about the same commit, younger than six hours, is still true.
+  if [[ -n $head ]] && jq -e --arg head "$head" --argjson now "$now" --argjson max "$UPDATE_MAX_AGE" \
+    '.head == $head and ($now - .checked) < $max' "$UPDATE_CACHE" >/dev/null 2>&1; then
+    document=$(jq -c '{schema, current, latest, available}' "$UPDATE_CACHE")
+    looked=1
+  elif [[ -n $head ]] &&
+    timeout 15 git -C "$dir" fetch --quiet https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master 2>/dev/null; then
+    if ! git -C "$dir" merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null &&
+      git -C "$dir" merge-base --is-ancestor HEAD FETCH_HEAD 2>/dev/null; then
+      available=true
+      latest=$(git -C "$dir" show FETCH_HEAD:manifest.json 2>/dev/null | jq -r '.version // ""') || latest=""
+    fi
+    document=$(update_document "$current" "$latest" "$available")
+    mkdir -p "${UPDATE_CACHE%/*}"
+    jq -c --arg head "$head" --argjson checked "$now" '. + {head: $head, checked: $checked}' \
+      <<<"$document" >"$UPDATE_CACHE.tmp" && mv "$UPDATE_CACHE.tmp" "$UPDATE_CACHE"
+    looked=1
+  else
+    document=$(update_document "$current" "" false)
+  fi
+
+  if ((json)); then
+    echo "$document"
+  elif ((!looked)); then
+    echo "$DISPLAY_NAME ${current:-?}: could not check for updates (no network, or the theme folder is not a git clone)"
+  elif [[ $(jq -r .available <<<"$document") == true ]]; then
+    echo "$DISPLAY_NAME $(jq -r .latest <<<"$document") is out, and you have ${current:-an older version}. Update with: $SELF update"
+  else
+    echo "$DISPLAY_NAME ${current:-?} is the latest version"
+  fi
+}
+
+cmd_update() {
+  case "${1:-}" in
+  --check) shift; cmd_update_check "$@"; return ;;
+  "") ;;
+  *) fail "unknown option: $1 (use: update, or update --check [--json])" ;;
+  esac
+  local dir
+  dir=$(theme_dir) || dir=""
+  [[ -n $dir && -e $dir/.git ]] ||
+    fail "the theme folder ${dir:-for $SLUG} is not a git clone, so it cannot update itself. Install it again with: omarchy theme install $(jq -r .repoUrl "$PROVIDER")"
+  echo "Updating $DISPLAY_NAME in $dir"
+  git -C "$dir" pull --ff-only https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master ||
+    fail "the pull stopped. If you changed files in $dir, commit or discard them, then run this again."
+  rm -f "$UPDATE_CACHE"
+  # The pulled theme's own CLI runs doctor: a new doctor applies a new layout,
+  # and nothing overwrites this script while bash is still reading it.
+  exec "$dir/bin/$CLI" doctor
 }
 
 # --- pieces -----------------------------------------------------------------
@@ -603,7 +699,8 @@ cmd_status() {
       --argjson g "$(read_setting widget)" --argjson ag "$(active_of widget)" \
       --argjson effect "$(pack_in_effect && echo true || echo false)" \
       --arg theme "$(current_theme)" --arg name "$DISPLAY_NAME" --arg slug "$SLUG" \
-      '{schema: $schema, name: $name, slug: $slug, theme: $theme, active: $effect,
+      --arg version "$(pack_version)" \
+      '{schema: $schema, name: $name, version: $version, slug: $slug, theme: $theme, active: $effect,
         settings: {wallpaper: $w, screensaver: $s, lock: $l, boot: $b, widget: $g},
         pieces: {wallpaper: $aw, screensaver: $as, lock: $al, boot: $ab, widget: $ag}}'
     return
@@ -758,6 +855,8 @@ Usage: $SELF <command>
                                       One piece at a time
   status [--is <piece>] [--json]      What is on
   doctor                              Assert everything again
+  update [--check [--json]]           Pull the latest version of this theme,
+                                      then doctor. --check only looks
   suspend                             Stand the pack down, keeping your settings
   uninstall [--keep-theme]            Remove the pack (execs uninstall.sh)
 
@@ -778,6 +877,7 @@ on) cmd_all true ;;
 off) cmd_all false ;;
 status) cmd_status "$@" ;;
 doctor) cmd_doctor ;;
+update) cmd_update "$@" ;;
 suspend) cmd_suspend ;;
 uninstall) exec "$ROOT/uninstall.sh" "$@" ;;
 hook)
