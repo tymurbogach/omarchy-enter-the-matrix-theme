@@ -86,27 +86,48 @@ Item {
     onFileChanged: reload()
   }
 
-  // The current background is a symlink that moves under our feet, so a
-  // FileView will not do. It is re-read at startup, over IPC (omarchy-matrix
-  // calls it) and on a slow poll as a safety net, because Omarchy's own
-  // `background refresh` IPC is not ours to hook into.
+  // The current background is a symlink, and omarchy-theme-bg-set replaces it
+  // with `ln -nsf`. A watch on the link would follow the old target, so this
+  // watches the folder that holds the link. Each change runs one readlink.
+  //
+  // Omarchy's idle service watches the Stay Awake file the same way
+  // (plugins/services/idle/Service.qml): a FileView on the folder, one probe
+  // per change, and a reload of the watch after each probe.
+  FileView {
+    id: backgroundDir
+    path: root.home + "/.local/state/omarchy/current"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: root.refreshBackground()
+  }
+
+  // A theme change swaps the theme folder and then the link, close together.
+  // A change that arrives during a read is kept, and read after it, so the
+  // last swap always wins.
+  property bool backgroundPending: false
+
   Process {
     id: readLink
     command: ["readlink", "-f", root.backgroundLink]
     stdout: StdioCollector {
       onStreamFinished: root.currentBackground = String(text || "").trim()
     }
+    onExited: function() {
+      if (root.backgroundPending) {
+        root.backgroundPending = false
+        readLink.running = true
+        return
+      }
+      backgroundDir.reload()
+    }
   }
 
   function refreshBackground() {
-    if (!readLink.running) readLink.running = true
-  }
-
-  Timer {
-    interval: 3000
-    repeat: true
-    running: true
-    onTriggered: root.refreshBackground()
+    if (readLink.running) {
+      root.backgroundPending = true
+      return
+    }
+    readLink.running = true
   }
 
   IpcHandler {
