@@ -46,7 +46,7 @@
       "for\" in CONTRIBUTING.md."
     ],
     "repo": "https://github.com/tymurbogach/omarchy-matrix-widget",
-    "ref": "92218f027b59e38fffc5ea5ede9aab830096cdb5",
+    "ref": "1684e3efe323b3541870f801d0c831b7bb6ee5b9",
     "files": ["manifest.json", "Panel.qml"],
     "section": "right"
   },

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.tymurbogach.enter-the-matrix",
   "name": "Matrix Rain",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "tymurbogach",
   "license": "MIT",
   "description": "GPU digital rain for the desktop background and the screensaver. Part of the Matrix theme pack.",
