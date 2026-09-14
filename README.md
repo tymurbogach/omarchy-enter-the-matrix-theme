@@ -1,11 +1,11 @@
-# Matrix — a theme for Omarchy 4, with an optional pack
+# Enter the Matrix: a theme for Omarchy 4, with an optional pack
 
 Phosphor green on black. The theme is colours and backgrounds, and it works
 alone. The pack puts the same digital rain on the desktop, as the screensaver,
 and behind the lock — plus a boot splash that types out the lines from the
 film.
 
-![preview](preview.png)
+![Enter the Matrix: the desktop with the rain, the lock, the boot splash and the bar widget](docs/showcase/poster.webp)
 
 ## Install
 
@@ -29,6 +29,25 @@ That script is the only supported way in. `omarchy plugin add <this repo>` looks
 like it should work — the manifest is at the root — but it installs the whole
 repository as the plugin and skips the CLI, the hooks and the bar widget, which
 is most of the pack.
+
+## What it looks like
+
+Every picture is a screenshot of the real thing, on Omarchy 4.0.3. Only the
+frames and the captions are added, by `tools/generate-showcase.py`.
+
+![The desktop: digital rain behind your windows](docs/showcase/desktop.webp)
+
+![The screensaver: the same rain, full screen](docs/showcase/screensaver.webp)
+
+![The lock: the rain behind the password field](docs/showcase/lock.webp)
+
+![The bar widget: four switches, Repair, Uninstall and the version you run](docs/showcase/widget.webp)
+
+![The boot splash: the passphrase, access granted, then the progress](docs/showcase/boot.webp)
+
+![The four lines typed at boot](docs/showcase/lines.webp)
+
+![The last line at shutdown and at reboot](docs/showcase/exits.webp)
 
 ## Usage
 

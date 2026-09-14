@@ -92,11 +92,11 @@ There are two clones, and each one has a different job:
 
 | Where | Job |
 |---|---|
-| `~/Projects/omarchy-enter-the-matrix` | The working copy. **Edit and commit here.** |
+| `~/Projects/omarchy-enter-the-matrix-theme` | The working copy. **Edit and commit here.** |
 | `~/.config/omarchy/themes/enter-the-matrix` | The copy that `omarchy theme install` makes. Omarchy can replace it, and an edit here is then lost. |
 
 ```bash
-cd ~/Projects/omarchy-enter-the-matrix && git commit && git push
+cd ~/Projects/omarchy-enter-the-matrix-theme && git commit && git push
 cd ~/.config/omarchy/themes/enter-the-matrix && git pull && ./install.sh
 ```
 
@@ -345,6 +345,15 @@ screensaver first closed when idle ended, so a mouse movement made it vanish.
 Omarchy's own screensaver does not do that, because its loop watches only the
 keyboard.
 
+**`omarchy toggle idle status` answers the opposite question.** It prints
+`"enabled": true` when **Stay Awake** is on, which means that idle is off. The
+tooltip `Allow Idle Lock & Screensaver` names the action that it offers, not
+the state.
+
+A script that read `enabled` as "idle is allowed" turned a user's Stay Awake
+off when it restored the machine. Save `.enabled` as it is, and restore Stay
+Awake only if it was `true`.
+
 **A fullscreen overlay maps under the cursor** and gets a pointer event at
 once. Without a short grace period, it dismisses itself in its first frame.
 
@@ -544,6 +553,19 @@ calls `mx_password_callback` and `mx_progress` directly from
 The probe also registers a no-op as the boot progress function, so real boot
 progress does not overwrite the percent. The probe only calls the drawing code,
 so the pictures still show the real thing.
+
+**A probe must play the boot's own sequence, not jump to the state that you
+want.** The first showcase probe called `mx_bar_show(1)` to put the progress
+track on screen. The track came up, but its box did not: when plymouthd showed
+the splash, `mx_normal_callback` hid the box, and nothing showed it again.
+
+The picture showed a splash that no boot ever shows. It passed as real until
+somebody remembered the ACCESS GRANTED box from a real boot.
+
+`tools/capture-showcase.sh` now plays the real order once the lines are typed:
+the dots, then `mx_normal_callback` (ACCESS GRANTED for `GRANTED_HOLD`
+frames), then the track in its own box. It takes a burst, and you pick the
+frames afterwards.
 
 **The preview probe skips the asset guard, so it cannot test the fallback.**
 The doctored stage calls `mx_password_callback` directly from

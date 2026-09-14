@@ -282,7 +282,8 @@ if [[ -n $WIDGET_DIR ]]; then
   check_validate "$WIDGET_DIR"
   check_widget_coherence
 else
-  check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh tools/check.sh
+  check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
+    tools/capture-showcase.sh tools/check.sh
   check_python lib/*.py tools/*.py
   check_qml Service.qml MatrixRain.qml
   check_validate "$ROOT"
