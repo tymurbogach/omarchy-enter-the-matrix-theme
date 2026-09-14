@@ -82,8 +82,9 @@ for id in "$PLUGIN_ID" "$WIDGET_ID"; do
   remove_plugin "$id"
 done
 
-echo "· handing Omarchy's screensaver back"
-omarchy-toggle screensaver-off off
+# Up to 1.2.0 the pack switched Omarchy's screensaver off. If this install still
+# holds that flag, hand it back. A flag that the user set stays (lib/pack.sh).
+release_screensaver_flag
 
 # The boot splash is the only piece that lives outside your home directory, so
 # it is also the only one that would survive an uninstall unnoticed. It needs a

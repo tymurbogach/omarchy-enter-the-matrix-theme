@@ -5,7 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Services.UPower
 import QtQuick
 
-// The Matrix pack's plugin: the same rain on the desktop and as the
+// The Matrix pack's plugin: the same rain on the desktop and over Omarchy's
 // screensaver.
 //
 // Additive on purpose. It neither clones nor disables omarchy.background: it
@@ -14,18 +14,11 @@ import QtQuick
 // idiom Omarchy itself uses in plugins/osd/Osd.qml and plugins/bar/Bar.qml.
 // Omarchy's background stays alive underneath, theme transitions intact.
 //
-// The screensaver is the SAME MatrixRain on WlrLayer.Overlay. It used to be
-// `ttfx` inside a terminal -- a different program drawing a different rain,
-// which is why it never matched the wallpaper or the lock. With
-// `omarchy toggle screensaver-off` set, omarchy-launch-screensaver bows out and
-// we draw instead.
+// The screensaver is additive in the same way. Omarchy opens its own
+// screensaver and closes it again, and this plugin only draws the rain over it.
 
 Item {
   id: root
-
-  // omarchy-shell injects this into any service plugin, third-party ones
-  // included (shell.qml:306). The configured idle timings come from here.
-  property var shell: null
 
   readonly property string home: Quickshell.env("HOME")
   // The filename comes from provider.json's slug. It is written here by hand
@@ -51,58 +44,28 @@ Item {
   property string currentBackground: ""
   readonly property bool rainIsBackground: String(currentBackground).indexOf(liveMarker) >= 0
 
-  // --- what the rest of the shell knows ----------------------------------
-  // Both lookups below go through the shell's own firstPartyServiceFor(),
-  // the same call sleepwalker's StayAwake indicator uses. It used to be a
-  // hand-rolled suffix scan over shell._services (id.indexOf(".lock") /
-  // ".idle"), kept on the theory that a clone -- omarchy.lock becomes
-  // <username>.lock -- needed matching by suffix rather than by id.
-  // PluginRegistry.resolveEnabledId(), which firstPartyServiceFor() calls
-  // through, already resolves a clone back to its id (it walks
-  // installedPlugins for whichever enabled manifest has clonedFrom == the
-  // id asked for), so the suffix scan bought nothing and only added a
-  // second, less careful way to miss.
+  // --- the screensaver ----------------------------------------------------
+  // Omarchy decides when, and this plugin only paints. At idle.screensaver
+  // seconds, Omarchy's idle service runs omarchy-launch-screensaver. That opens
+  // one fullscreen window per monitor, with the app id below.
   //
-  // Both misses default to NOT allowed / NOT locked, never the other way:
-  // idleServiceEnabled() used to default a miss to true, and a miss (the
-  // idle service not yet published in shell._services, e.g. a load-order
-  // race at shell startup) silently overrode "stay awake" for the rest of
-  // the shell's life. sessionLockedNow() was never that unsafe -- a miss
-  // only burns GPU behind a WlSessionLock overlay that already covers every
-  // layer -- but it is the same lookup and should fail the same way.
-  function idleServiceEnabled() {
-    try {
-      var service = shell ? shell.firstPartyServiceFor("omarchy.idle") : null
-      return service && ("idleEnabled" in service) ? !!service.idleEnabled : false
-    } catch (e) {}
+  // While such a window is open, the rain covers it. Stay Awake, the timings in
+  // shell.json, idle inhibitors and the key that ends the screensaver all stay
+  // Omarchy's. omarchy-system-lock closes the screensaver, so the rain goes too.
+  //
+  // Up to 1.2.0 the pack switched Omarchy's screensaver off and ran an idle
+  // monitor of its own. A third-party service gets a scoped shell
+  // (shell.qml:739-744) that cannot see Stay Awake, the timings or the lock.
+  // That monitor never started, and no screensaver came up at all.
+  readonly property string screensaverAppId: "org.omarchy.screensaver"
+  readonly property bool screensaverOpen: {
+    var toplevels = ToplevelManager.toplevels.values
+    for (var i = 0; i < toplevels.length; i++) {
+      if (toplevels[i].appId === root.screensaverAppId) return true
+    }
     return false
   }
-  readonly property bool idleAllowed: idleServiceEnabled()
-
-  function sessionLockedNow() {
-    try {
-      var service = shell ? shell.firstPartyServiceFor("omarchy.lock") : null
-      return service && ("locked" in service) ? !!service.locked : false
-    } catch (e) {}
-    return false
-  }
-  // While the session is locked the lock's WlSessionLock is in charge, and by
-  // protocol it covers every layer. Drawing underneath would only burn GPU.
-  readonly property bool sessionLocked: sessionLockedNow()
-  // The screensaver is finished the moment the lock comes up. Otherwise it
-  // reappeared over the desktop after unlocking without anyone asking for it,
-  // since moving the mouse no longer dismisses it.
-  onSessionLockedChanged: if (sessionLocked) dismissScreensaver()
-
-  readonly property int screensaverSeconds: {
-    var idle = shell && shell.shellConfig && shell.shellConfig.idle ? shell.shellConfig.idle : ({})
-    var seconds = Number(idle.screensaver)
-    return (isFinite(seconds) && seconds > 0) ? Math.round(seconds) : 150
-  }
-
-  // The screensaver gives way as soon as the lock arrives: if idle.lock is at
-  // or below idle.screensaver, we never get to show at all.
-  property bool screensaverActive: false
+  readonly property bool screensaverShowing: root.wantScreensaver && root.screensaverOpen
 
   function applyConfig(raw) {
     var parsed = ({})
@@ -110,28 +73,6 @@ Item {
     root.wantWallpaper = parsed.wallpaper !== false
     root.wantScreensaver = parsed.screensaver !== false
   }
-
-  function dismissScreensaver() {
-    if (!root.screensaverActive) return
-    root.screensaverActive = false
-  }
-
-  // Omarchy's screensaver hides the pointer while it runs and gives it back on
-  // exit (bin/omarchy-screensaver), using this same command and this same
-  // fallback. Doing it identically keeps the feel identical: a clean screen,
-  // with no pointer floating over the rain.
-  function hidePointer(hidden) {
-    var value = hidden ? "true" : "false"
-    Quickshell.execDetached(["bash", "-lc",
-      "hyprctl eval 'hl.config({ cursor = { invisible = " + value + " } })' &>/dev/null" +
-      " || hyprctl keyword cursor:invisible " + value + " &>/dev/null || true"])
-  }
-
-  // One place decides: hidden on the way in, given back on the way out, whatever
-  // happens to the screensaver. Should the shell die with the pointer hidden,
-  // `hyprctl keyword cursor:invisible false` brings it back.
-  onScreensaverActiveChanged: hidePointer(root.screensaverActive)
-  Component.onDestruction: if (root.screensaverActive) hidePointer(false)
 
   FileView {
     id: configFile
@@ -182,30 +123,10 @@ Item {
         screensaver: root.wantScreensaver,
         rainIsBackground: root.rainIsBackground,
         background: root.currentBackground,
-        screensaverActive: root.screensaverActive,
-        screensaverSeconds: root.screensaverSeconds,
-        locked: root.sessionLocked
+        screensaverOpen: root.screensaverOpen,
+        screensaverShowing: root.screensaverShowing
       })
     }
-
-    // For testing the screensaver without waiting out the idle timer.
-    function screensaver(action: string): string {
-      if (action === "stop") { root.dismissScreensaver(); return "stopped" }
-      root.screensaverActive = root.wantScreensaver
-      return root.screensaverActive ? "started" : "disabled"
-    }
-  }
-
-  IdleMonitor {
-    id: idleMonitor
-    enabled: root.wantScreensaver && root.idleAllowed && !root.sessionLocked
-    timeout: root.screensaverSeconds
-    respectInhibitors: true
-    // It only switches on. Dismissing when idle ends is what made it vanish on
-    // mouse movement, and Omarchy's does not do that: its loop only watches the
-    // keyboard (`read -n1`) and whether it still has focus. The mouse never
-    // closes it.
-    onIsIdleChanged: if (isIdle) root.screensaverActive = true
   }
 
   Component.onCompleted: root.refreshBackground()
@@ -221,7 +142,7 @@ Item {
       screen: modelData
       anchors { top: true; bottom: true; left: true; right: true }
       color: "transparent"
-      visible: root.wantWallpaper && root.rainIsBackground && !root.sessionLocked
+      visible: root.wantWallpaper && root.rainIsBackground
 
       // The rain starts from black every time the surface appears, rather than
       // resuming wherever it happened to be. The MatrixRain lives inside this
@@ -277,7 +198,7 @@ Item {
     }
   }
 
-  // --- layer 2: the screensaver ------------------------------------------
+  // --- layer 2: the rain over Omarchy's screensaver ------------------------
   Variants {
     model: Quickshell.screens
 
@@ -288,52 +209,27 @@ Item {
       screen: modelData
       anchors { top: true; bottom: true; left: true; right: true }
       color: "black"
-      visible: root.screensaverActive && root.wantScreensaver && !root.sessionLocked
+      visible: root.screensaverShowing
 
-      // Same as the wallpaper: every time the screensaver comes up it rains
-      // from nothing, not from wherever the last idle left it.
+      // Every time the screensaver comes up it rains from nothing, not from
+      // wherever the last one left it.
       onVisibleChanged: if (visible) screensaverRain.restart()
 
+      // Overlay, so the rain sits above Omarchy's fullscreen screensaver window.
       WlrLayershell.namespace: "matrix-rain-screensaver"
       WlrLayershell.layer: WlrLayer.Overlay
-      // Exclusive while visible: the keyboard is needed so any key dismisses
-      // it, the way Omarchy's terminal screensaver behaves.
-      WlrLayershell.keyboardFocus: screensaverPanel.visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      // No keyboard and no pointer. Every key and every mouse movement reaches
+      // Omarchy's screensaver underneath, and that window alone decides when
+      // it ends. It also hides the pointer itself (bin/omarchy-screensaver).
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
+      mask: Region {}
 
       MatrixRain {
         id: screensaverRain
         anchors.fill: parent
         dpr: screensaverPanel.modelData.devicePixelRatio
         running: screensaverPanel.visible
-      }
-
-      // Swallows the mouse and ignores it. It neither dismisses nor lets the
-      // event through to whatever is underneath, which is how Omarchy's
-      // screensaver window behaves: a click inside does not close it, because
-      // its loop only ever reads keys.
-      MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-      }
-
-      // A short grace period before keys count: the surface takes focus as
-      // soon as it maps, and a keystroke already in flight should not dismiss
-      // it in the very frame it appears.
-      Timer {
-        id: grace
-        interval: 400
-        repeat: false
-        running: screensaverPanel.visible
-      }
-
-      Item {
-        anchors.fill: parent
-        focus: screensaverPanel.visible
-        Keys.onPressed: function (event) {
-          event.accepted = true
-          if (!grace.running) root.dismissScreensaver()
-        }
       }
     }
   }

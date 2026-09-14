@@ -153,3 +153,22 @@ clean_legacy_bins() {
   find "$SHARE_DIR" -name '*.pyc' -delete 2>/dev/null || true
   mkdir -p "$SHARE_DIR" && touch "$SHARE_DIR/.layout-v2"
 }
+
+# Up to 1.2.0 the pack set Omarchy's screensaver-off flag and drew a screensaver
+# of its own. Now the rain covers Omarchy's screensaver, so the flag belongs to
+# the user again. Hand back the flag that the pack set, once.
+#
+# The pack set it whenever the screensaver piece was on, and doctor forced it.
+# So a flag seen here, with the piece on, is the pack's. A first install marks
+# itself done in install.sh, because a flag found then is the user's. Never fails.
+release_screensaver_flag() {
+  local marker="$SHARE_DIR/.screensaver-v2" wanted
+  [[ ! -f $marker ]] || return 0
+  wanted=$(jq -r 'if has("screensaver") then .screensaver else true end | tostring' "$CONFIG" 2>/dev/null) ||
+    wanted=""
+  if [[ $wanted == "true" && -f $HOME/.local/state/omarchy/toggles/screensaver-off ]]; then
+    omarchy-toggle screensaver-off off >/dev/null 2>&1 || true
+  fi
+  mkdir -p "$SHARE_DIR" && touch "$marker"
+  return 0
+}

@@ -225,7 +225,7 @@ but the rain plugin was disabled and Omarchy's own lock was in charge.
 
 The settings were true and the theme was ours, but nothing happened.
 `is_active` now asks whether the plugin is enabled, whether the lock clone is
-the enabled lock, and whether the screensaver flag is set.
+the enabled lock, and whether Omarchy's own screensaver is on.
 
 The widget's panel follows the same rule: its switch shows what happens now. If
 a piece is on in the settings but not in effect, the line under the switch
@@ -340,10 +340,42 @@ The pack knows its own clones by two marks. The manifest says that
 holds `MatrixRain.qml`. A lock clone that somebody made for their own reasons
 has the same name shape, and it must survive.
 
-**The Wayland idle protocol resets on any input, mouse included.** The
-screensaver first closed when idle ended, so a mouse movement made it vanish.
-Omarchy's own screensaver does not do that, because its loop watches only the
-keyboard.
+**A third-party service cannot see Stay Awake, the idle timings or the lock.**
+A plain `service` plugin does not get the shell. It gets a scoped
+`PluginShellApi` (`shell.qml:739-744`), and that API has no `shellConfig`.
+
+Its `firstPartyServiceFor()` returns `null` unless the plugin is a bar or an
+Indicators clone (`shell.qml:592-621`). The lock is never reachable, because
+the shell keeps it in `AuthServiceStore` (`shell.qml:933-937`).
+
+Up to 1.2.0, the screensaver had an idle monitor of its own, gated on those
+lookups. Each lookup failed, and a failure meant "not allowed", so the monitor
+never started. The pack had also set Omarchy's `screensaver-off` flag, so no
+screensaver came up at all.
+
+Every check that did not wait out the idle timer passed. `status` showed a
+tick, and an IPC call drew the rain on demand.
+
+**So the rain covers Omarchy's screensaver, and Omarchy decides when that
+runs.** Omarchy's idle service opens its own screensaver: one fullscreen window
+per monitor, with the app id `org.omarchy.screensaver`. The plugin draws the
+rain on an overlay layer while such a window exists, and the layer takes no
+keyboard and no pointer.
+
+Stay Awake, the timings in `shell.json`, the idle inhibitors and the key that
+ends the screensaver all stay Omarchy's. `omarchy-system-lock` closes the
+screensaver, so the rain goes when the lock comes.
+
+The `screensaver-off` flag is the user's switch again. Only an explicit
+`screensaver on` clears it. `tools/check.sh` fails if `Service.qml` starts to
+decide on its own again.
+
+Two lessons of the old design still apply to any overlay that takes input:
+
+- The Wayland idle protocol resets on any input, mouse included. A screensaver
+  that closes when idle ends vanishes when the mouse moves.
+- A fullscreen overlay maps under the cursor and gets a pointer event at once.
+  Without a short grace period, it dismisses itself in its first frame.
 
 **`omarchy toggle idle status` answers the opposite question.** It prints
 `"enabled": true` when **Stay Awake** is on, which means that idle is off. The
@@ -353,9 +385,6 @@ the state.
 A script that read `enabled` as "idle is allowed" turned a user's Stay Awake
 off when it restored the machine. Save `.enabled` as it is, and restore Stay
 Awake only if it was `true`.
-
-**A fullscreen overlay maps under the cursor** and gets a pointer event at
-once. Without a short grace period, it dismisses itself in its first frame.
 
 **`qsb` is not on `PATH`: it is at `/usr/lib/qt6/bin/qsb`.** The shipped
 `matrix.frag.qsb` was built with `--glsl 300es,330 --hlsl 50 --msl 12`. Other
@@ -662,7 +691,8 @@ release.
    - the widget entry in the bar layout of `shell.json`;
    - `~/.config/omarchy/enter-the-matrix.json`;
    - the theme directory;
-   - the flag `~/.local/state/omarchy/toggles/screensaver-off`.
+   - the flag `~/.local/state/omarchy/toggles/screensaver-off`, unless you set
+     it yourself. The pack set it up to 1.2.0.
 
    The repo had the name `omarchy-matrix` until 2026-08-31. A machine with an
    older install also has `~/.config/omarchy/matrix.json`,
@@ -676,6 +706,9 @@ release.
    enough.
    - Lock: take a **screenshot**, not a status query. Open
      `omarchy-shell lock preview` and photograph it with `grim`.
+   - Screensaver: run `omarchy-launch-screensaver force` and photograph it. The
+     rain must cover Omarchy's screensaver. Once per release, also wait out
+     `idle.screensaver` without input, with Stay Awake off.
    - Widget: take a screenshot of the bar **and** of the open panel. An icon
      that occupies zero pixels passes every other check.
    - Boot splash: use `tools/preview-plymouth.sh`. Photograph the typed line,
@@ -712,12 +745,12 @@ photographs the result:
 | Piece | Show it | Put it away |
 |---|---|---|
 | Wallpaper | `hyprctl dispatch 'hl.dsp.focus({ workspace = "5" })'`, on an empty workspace | the same call with your own workspace |
-| Screensaver | `omarchy-shell matrix screensaver start` | `omarchy-shell matrix screensaver stop` |
+| Screensaver | `omarchy-launch-screensaver force` | `pkill -f '[o]rg.omarchy.screensaver'`, as `omarchy-system-lock` does |
 | Lock | `omarchy-shell lock preview` | `omarchy-shell lock hidePreview` |
 | Widget panel | `omarchy-shell shell summon io.github.tymurbogach.enter-the-matrix.widget` | a shell restart (a second summon does not close it) |
 
 `hyprctl layers -j` lists `matrix-rain-wallpaper` while the desktop rain is
-mapped. `omarchy-shell matrix status` answers from inside the plugin. So it
+mapped, and `matrix-rain-screensaver` while the rain covers the screensaver. `omarchy-shell matrix status` answers from inside the plugin. So it
 proves that the plugin reads the settings that the CLI writes.
 
 `grim` needs a lit, unlocked screen. If the lid is closed or DPMS is off,

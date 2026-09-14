@@ -103,7 +103,7 @@ is_active() {
   case "$1" in
   boot) boot_applied ;;
   wallpaper) on_live_background && plugin_enabled "$PLUGIN_ID" ;;
-  screensaver) plugin_enabled "$PLUGIN_ID" && screensaver_flag_set ;;
+  screensaver) plugin_enabled "$PLUGIN_ID" && ! screensaver_flag_set ;;
   lock) lock_clone_enabled ;;
   widget) plugin_enabled "$WIDGET_ID" ;;
   esac
@@ -178,8 +178,19 @@ lock_clone_enabled() {
   plugin_enabled "$id"
 }
 
+# Omarchy's own screensaver switch: `omarchy toggle screensaver` sets this flag.
+# With it set, Omarchy opens no screensaver, so the rain has nothing to cover.
 screensaver_flag_set() {
   [[ -f "$HOME/.local/state/omarchy/toggles/screensaver-off" ]]
+}
+
+# The one reason that Repair cannot fix: the user switched Omarchy's screensaver
+# off, and Repair must not overrule that. The widget shows these words under the
+# switch, and the switch turns it back on. Empty when it does not apply.
+screensaver_note() {
+  if [[ $(read_setting screensaver) == "true" ]] && pack_in_effect && screensaver_flag_set; then
+    echo "On, but Omarchy's screensaver is off. Switch it on here."
+  fi
 }
 
 nudge_shell() {
@@ -433,19 +444,17 @@ apply_wallpaper() {
   sync_plugin && nudge_shell
 }
 
-# With the flag set, omarchy-launch-screensaver bows out instead of opening the
-# terminal with ttfx: the screensaver is drawn by our plugin, which is the same
-# shader as the wallpaper and the lock.
-sync_screensaver() {
-  if [[ $(read_setting screensaver) == "true" ]]; then
-    omarchy-toggle screensaver-off on
-  else
-    omarchy-toggle screensaver-off off
-  fi
-}
-
+# The rain covers Omarchy's own screensaver, and Omarchy decides when that one
+# runs. So the screensaver-off flag is the user's switch, not the pack's:
+# doctor and the hooks never touch it.
+#
+# An explicit `screensaver on` is the one exception. It asks for a screensaver,
+# and with the flag set there is none to cover, so it clears the flag.
 apply_screensaver() {
-  sync_screensaver
+  if [[ $(read_setting screensaver) == "true" ]] && screensaver_flag_set; then
+    omarchy-toggle screensaver-off off
+    echo "Omarchy's screensaver was off; it is on again, with the rain over it"
+  fi
   sync_plugin && nudge_shell
 }
 
@@ -690,6 +699,8 @@ cmd_status() {
     # not the same question -- see is_active -- and the widget draws its ticks
     # from `active` so that one definition serves both it and the text below.
     # `schema` versions this document: readers take 1 and reject anything else.
+    # `notes` holds the reason for a piece that is on but not in effect, when
+    # the widget's own generic reason would be wrong (see screensaver_note).
     jq -n \
       --argjson schema 1 \
       --argjson w "$(read_setting wallpaper)" --argjson s "$(read_setting screensaver)" \
@@ -699,10 +710,11 @@ cmd_status() {
       --argjson g "$(read_setting widget)" --argjson ag "$(active_of widget)" \
       --argjson effect "$(pack_in_effect && echo true || echo false)" \
       --arg theme "$(current_theme)" --arg name "$DISPLAY_NAME" --arg slug "$SLUG" \
-      --arg version "$(pack_version)" \
+      --arg version "$(pack_version)" --arg ns "$(screensaver_note)" \
       '{schema: $schema, name: $name, version: $version, slug: $slug, theme: $theme, active: $effect,
         settings: {wallpaper: $w, screensaver: $s, lock: $l, boot: $b, widget: $g},
-        pieces: {wallpaper: $aw, screensaver: $as, lock: $al, boot: $ab, widget: $ag}}'
+        pieces: {wallpaper: $aw, screensaver: $as, lock: $al, boot: $ab, widget: $ag},
+        notes: (if $ns == "" then {} else {screensaver: $ns} end)}'
     return
   fi
 
@@ -727,6 +739,11 @@ cmd_status() {
       printf '    %-12s \033[2mon, but not applied — run: %s boot on\033[0m\n' "$piece" "$SELF"
     elif ! pack_in_effect; then
       printf '    %-12s \033[2mon, but stood down with the theme\033[0m\n' "$piece"
+    elif [[ $piece == "screensaver" ]] && screensaver_flag_set; then
+      # Not a fault: the user switched Omarchy's screensaver off, and the rain
+      # only covers that one. doctor must not overrule the choice.
+      printf "    %-12s \033[2mon, but Omarchy's screensaver is off — run: %s screensaver on\033[0m\n" \
+        "$piece" "$SELF"
     elif [[ $piece == "wallpaper" ]] && ! on_live_background; then
       # The one case that is neither: the theme is ours, the piece is on, and the
       # desktop is showing another background from the carousel. Asked
@@ -774,7 +791,7 @@ cmd_doctor() {
     cmd_status
     return 0
   fi
-  sync_screensaver
+  release_screensaver_flag
   sync_plugin || failures=1
   # The background too, when the piece is on. This is the other half of the ✓
   # that lied: `omarchy theme set` rotates to the next background, so coming
@@ -813,7 +830,7 @@ cmd_suspend() {
   # else's theme is the pack refusing to stand down (Rule 5).
   ! plugin_enabled "$WIDGET_ID" || omarchy-plugin-disable "$WIDGET_ID" >/dev/null
   forget_plugin_list
-  omarchy-toggle screensaver-off off
+  release_screensaver_flag
   if lock_clone_id >/dev/null; then
     remove_lock_clone
     # Standing down runs from the theme-set hook, where nobody is watching the
@@ -862,7 +879,7 @@ Usage: $SELF <command>
 
 Pieces:
   wallpaper    Rain on the desktop (selects the live background)
-  screensaver  Rain when you go idle, instead of Omarchy's terminal one
+  screensaver  Omarchy's own screensaver, with the rain drawn over it
   lock         Rain behind the password field when you lock
   boot         The screen before login (Plymouth). Needs sudo.
   widget       The switchboard on the bar: these switches, one click away

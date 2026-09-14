@@ -138,6 +138,17 @@ cli = (root / "bin" / "omarchy-matrix").read_text()
 urls = re.findall(r'git -C "\$dir" (?:fetch --quiet|pull --ff-only) (\S+) ', cli)
 if len(urls) != 2 or set(urls) != {provider["repoUrl"]}:
     bad(f"the update URLs in bin/omarchy-matrix are {urls}, want {provider['repoUrl']} twice")
+# The rain covers Omarchy's screensaver and never decides when it runs. A
+# third-party service gets a scoped shell that cannot see Stay Awake, the idle
+# timings or the lock. Up to 1.2.0 each of these left the pack with no
+# screensaver at all, while every check here passed.
+for needle in ("IdleMonitor", "firstPartyServiceFor", "shellConfig", "_services"):
+    if needle in service:
+        bad(f"Service.qml uses {needle}: the rain must follow Omarchy's screensaver, not decide on its own")
+if '"org.omarchy.screensaver"' not in service:
+    bad("Service.qml does not follow Omarchy's screensaver window (org.omarchy.screensaver)")
+if "omarchy-toggle screensaver-off on" in cli:
+    bad("bin/omarchy-matrix switches Omarchy's screensaver off: that flag belongs to the user")
 for message in errors:
     print(f"  FAIL: {message}")
 sys.exit(1 if errors else 0)

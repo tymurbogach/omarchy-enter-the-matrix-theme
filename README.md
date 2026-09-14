@@ -65,7 +65,7 @@ omarchy-matrix update            # pull the latest version, then doctor
 | Piece | What it is |
 |---|---|
 | `wallpaper` | Rain on the desktop, above the wallpaper and below every window. Clicks go through it, and Omarchy's own background is not touched. On mains it always rains; on battery, only while no window is on the active workspace. |
-| `screensaver` | Rain when you go idle, on your `shell.json` idle timing. It behaves like Omarchy's own: the pointer is hidden, the mouse does not dismiss it, any key does. |
+| `screensaver` | Omarchy's own screensaver, with the rain drawn over it. Omarchy still decides the rest: your `shell.json` idle timing, Stay Awake, the key that ends it and the lock that follows it. |
 | `lock` | Rain behind the password field. Derived from your own lock, never shipped as a copy, so Omarchy's PAM and fingerprint flows keep arriving. |
 | `boot` | The screen before login, typing out the four lines from the film — and two more on the way out, different for a shutdown and for a reboot. Needs your password and rebuilds the initramfs, so it never applies on its own. |
 | `widget` | The Matrix icon on the bar: the four switches above with a ✓ each, plus Repair and Uninstall, and Update when a newer version is out. The panel's title carries the version you run. Lives in its own repo, [omarchy-matrix-widget](https://github.com/tymurbogach/omarchy-matrix-widget), fetched automatically by `install.sh`. |
@@ -95,14 +95,10 @@ Worth knowing:
 > theme takes you off the rain. Come back with `omarchy-matrix wallpaper on`, or
 > from the bar.
 
-> **With "stay awake" on, the screensaver never comes up.** The pack respects the
-> same switch Omarchy's idle service does: with it set there is no
-> screensaver, neither ours nor theirs.
-
-> **Careful with Omarchy's own toggle.** The `screensaver` piece uses the native
-> `screensaver-off` flag, so `omarchy toggle screensaver` turns it off underneath
-> while the settings file still says yes. `omarchy-matrix doctor` puts them back
-> in agreement.
+> **Omarchy's screensaver switch decides.** The rain covers Omarchy's own
+> screensaver. With Stay Awake on, or with Omarchy's screensaver switched off
+> (`omarchy toggle screensaver`), no screensaver comes up, and no rain either.
+> `omarchy-matrix screensaver on` switches Omarchy's screensaver back on.
 
 > **`omarchy refresh shell` turns the rain off.** That command rewrites
 > `shell.json` wholesale, and that is where Omarchy records which plugins are
@@ -121,7 +117,7 @@ Automatic:
 | `omarchy update` | The lock and the boot splash are derived again from the updated sources |
 
 Standing down means: the plugin is disabled, the bar icon goes, Omarchy's
-screensaver returns, and **the lock clone is deleted** — with
+screensaver shows without the rain, and **the lock clone is deleted** — with
 `omarchy plugin remove`, which is what re-enables Omarchy's own; merely disabling
 it would leave you with no lock enabled at all. Your settings are untouched:
 going back restores exactly what you had.

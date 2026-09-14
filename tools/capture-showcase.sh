@@ -115,12 +115,18 @@ close_about() {
   done
 }
 
+# What omarchy-system-lock does to close Omarchy's screensaver. No key is sent:
+# a key goes to whichever window has the focus (see the wtype trap).
+close_screensaver() {
+  pkill -f '[o]rg.omarchy.screensaver' 2>/dev/null || true
+}
+
 restore() {
   set +e
   say "putting the machine back"
   close_about
   ((${FAKE_UPDATE:-0})) && rm -f "$UPDATE_CACHE"
-  omarchy-shell "$IPC" screensaver stop >/dev/null 2>&1
+  close_screensaver
   omarchy-shell lock hidePreview >/dev/null 2>&1
   local piece want now
   for piece in wallpaper screensaver lock widget; do
@@ -169,6 +175,10 @@ about_open() {
   [[ -n $(about_pids) ]]
 }
 
+rain_over_screensaver() {
+  hyprctl layers -j | jq -e '[.. | objects | select(.namespace? == "matrix-rain-screensaver")] | length > 0'
+}
+
 # --- the scenes ------------------------------------------------------------
 
 scene_desktop() {
@@ -181,11 +191,14 @@ scene_desktop() {
   sleep 1
 }
 
+# Omarchy's own screensaver, which the rain covers. `force` opens it even when
+# Omarchy's screensaver switch is off.
 scene_screensaver() {
-  omarchy-shell "$IPC" screensaver start >/dev/null
+  omarchy-launch-screensaver force >/dev/null 2>&1
+  wait_for 10 rain_over_screensaver || die "the rain did not cover the screensaver"
   sleep 6
   shoot screensaver
-  omarchy-shell "$IPC" screensaver stop >/dev/null
+  close_screensaver
   sleep 1
 }
 

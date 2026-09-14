@@ -299,6 +299,9 @@ ask() {
 }
 
 if [[ ! -f $CONFIG ]]; then
+  # A first install. A screensaver-off flag that is already here is the user's
+  # own, so release_screensaver_flag (lib/pack.sh) must leave it alone.
+  mkdir -p "$SHARE_DIR" && touch "$SHARE_DIR/.screensaver-v2"
   if ((INTERACTIVE)); then
     echo
     echo "  ${BOLD}Which pieces do you want?${OFF} Each one switches on and off later,"
@@ -307,7 +310,7 @@ if [[ ! -f $CONFIG ]]; then
   fi
   w=true; s=true; l=true; g=true
   ask "Background " "rain on the desktop"                  || w=false
-  ask "Screensaver" "rain when idle, instead of Omarchy's" || s=false
+  ask "Screensaver" "rain over Omarchy's own screensaver"  || s=false
   ask "Lock       " "rain behind the password field"       || l=false
   ask "Bar icon   " "these switches, one click away"       || g=false
   printf '{"wallpaper": %s, "screensaver": %s, "lock": %s, "boot": true, "widget": %s}\n' \
