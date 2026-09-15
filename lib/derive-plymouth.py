@@ -1454,16 +1454,18 @@ def main():
     staging = Path(tempfile.mkdtemp(prefix=f"{SLUG}-plymouth."))
     try:
         font, face = stage(staging, colours, theme_dir)
-        for mode in MODE_LINES:
-            steps = storyboard(mode)
-            seconds = sum(frames for _, _, frames in steps) / FPS
-            print(f"  {THEME} [{mode}]: {len(steps)} steps, {seconds:.1f}s of "
-                  f"typing, {len(MODE_LINES[mode])} lines")
-        print(f"  drawn in {face.name}, baked to PNG; {font!r} only for the "
-              f"CAPS LOCK label")
-        print(f"  every size measured at boot, none baked in")
 
         if stage_only:
+            # What a designer wants to know. Somebody who picks a card in
+            # Style > Unlock does not, so an install prints none of it.
+            for mode in MODE_LINES:
+                steps = storyboard(mode)
+                seconds = sum(frames for _, _, frames in steps) / FPS
+                print(f"  {THEME} [{mode}]: {len(steps)} steps, {seconds:.1f}s of "
+                      f"typing, {len(MODE_LINES[mode])} lines")
+            print(f"  drawn in {face.name}, baked to PNG; {font!r} only for the "
+                  f"CAPS LOCK label")
+            print(f"  every size measured at boot, none baked in")
             out = Path.home() / f".cache/{CLI}/plymouth"
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(out, ignore_errors=True)
@@ -1490,6 +1492,9 @@ def main():
                            check=True)
             subprocess.run(["sudo", "plymouth-set-default-theme", THEME], check=True)
 
+            # The same rebuild, with the same log, as Omarchy's own
+            # omarchy-plymouth-set: picking this card in Style > Unlock looks
+            # the same as picking any other.
             if shutil.which("limine-mkinitcpio"):
                 subprocess.run(["sudo", "limine-mkinitcpio"], check=True)
             else:
@@ -1508,7 +1513,8 @@ def main():
                 f"  This step writes outside your home directory and needs a "
                 f"real terminal to ask\n"
                 f"  for your password. From one, run: {CLI} boot on")
-        print("  installed and set as default. To go back: omarchy plymouth reset")
+        # Nothing more to print. Omarchy's own publisher also ends with the
+        # build log, and the floating terminal prints "Done!" after it.
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 

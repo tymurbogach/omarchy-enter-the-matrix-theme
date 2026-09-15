@@ -229,6 +229,7 @@ installed_pairs() {
   echo "$theme/bin/$CLI|$SHARE_DIR/bin/$CLI"
   echo "$theme/lib/derive-lock.py|$SHARE_DIR/lib/derive-lock.py"
   echo "$theme/lib/derive-plymouth.py|$SHARE_DIR/lib/derive-plymouth.py"
+  echo "$theme/lib/derive-menu.py|$SHARE_DIR/lib/derive-menu.py"
   echo "$theme/lib/provider.py|$SHARE_DIR/lib/provider.py"
   echo "$theme/lib/pack.sh|$SHARE_DIR/lib/pack.sh"
   echo "$theme/uninstall.sh|$SHARE_DIR/uninstall.sh"
@@ -603,24 +604,45 @@ apply_widget() {
 
 apply_boot() {
   # The screen before login. Needs sudo and rebuilds the initramfs, so it never
-  # happens on its own: only when you ask for it.
+  # happens on its own: only when you ask for it, or pick this theme's card in
+  # Omarchy's Style > Unlock (lib/derive-menu.py).
   #
-  # `omarchy plymouth set-by-theme` will not do: it only takes colours and a
-  # still PNG, and here the line is typed out. derive-plymouth.py starts from
-  # this machine's omarchy.script and adds the animation, leaving Omarchy's own
-  # theme untouched in its folder. Going back is `omarchy plymouth reset`.
+  # derive-plymouth.py adds the animation as a theme of its own beside
+  # Omarchy's, and makes it the default: one rebuild, like any other card in
+  # Unlock. Omarchy's still splash is not installed underneath. That took a
+  # second rebuild, only so that Unlock would mark this card. Going back is
+  # `omarchy plymouth reset`.
   if [[ $(read_setting boot) == "true" ]]; then
-    OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-plymouth.py" || return 1
+    derive_boot || return 1
   else
-    # Only reset when OUR theme is the one installed. Resetting unconditionally
-    # rebuilt the initramfs for nothing, and worse, it dragged somebody who had
-    # picked `spinner` back to Omarchy's -- overriding a choice the pack never
-    # made. The directory goes either way.
-    if boot_applied; then
+    # Only reset when a Matrix splash is the one installed: the animation, or
+    # Omarchy's still one. Resetting unconditionally rebuilt the initramfs for
+    # nothing, and dragged somebody who had picked `spinner` back to Omarchy's,
+    # overriding a choice the pack never made. The directory goes either way.
+    if boot_applied || omarchy_boot_is_ours; then
       omarchy-plymouth-reset || return 1
     fi
     remove_plymouth_theme
   fi
+}
+
+# The animation, derived from this machine's omarchy.script. post-update runs
+# this too, after every `omarchy update`.
+derive_boot() {
+  OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-plymouth.py"
+}
+
+# Omarchy's own still splash carries this theme when its logo is the theme's
+# unlock.png. That is how `omarchy plymouth current` knows a theme.
+omarchy_boot_is_ours() {
+  [[ $(omarchy-plymouth-current 2>/dev/null) == "$SLUG" ]]
+}
+
+# Style > Unlock: the card of this theme boots animated (lib/derive-menu.py).
+# It belongs to `boot`, which follows the system and not the theme, so it stays
+# while another theme is current.
+apply_unlock_menu() {
+  OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-menu.py"
 }
 
 apply_piece() {
@@ -659,7 +681,15 @@ cmd_hook_post_update() {
 
   # The boot splash needs sudo, and there is a terminal here.
   if is_active boot; then
-    apply_boot || echo "$DISPLAY_NAME: could not re-derive the boot splash" >&2
+    derive_boot || echo "$DISPLAY_NAME: could not re-derive the boot splash" >&2
+  fi
+
+  # doctor above derived Style > Unlock again. If Omarchy's row changed shape,
+  # the deriver handed the row back to Omarchy. Say so: nobody reads doctor here.
+  if ! apply_unlock_menu >/dev/null 2>&1; then
+    omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
+      "Omarchy's Unlock menu has changed. Its Matrix card gives the still splash for now." \
+      2>/dev/null || true
   fi
 
   # doctor's failure mode, when nobody watches stdout: the patch no longer fits
@@ -771,6 +801,9 @@ cmd_doctor() {
   local failures=0
   echo "Checking the pack..."
   sync_files
+  # Style > Unlock belongs to `boot`, which follows the system and not the
+  # theme, so it is derived again here whichever theme is current.
+  apply_unlock_menu || failures=1
   # Under ANOTHER theme there is nothing to assert: the pack is stood down by
   # design, and standing it up is exactly the bug this guards. install.sh ends
   # in doctor, so any `git pull && ./install.sh` run while on somebody else's
@@ -881,7 +914,8 @@ Pieces:
   wallpaper    Rain on the desktop (selects the live background)
   screensaver  Omarchy's own screensaver, with the rain drawn over it
   lock         Rain behind the password field when you lock
-  boot         The screen before login (Plymouth). Needs sudo.
+  boot         The screen before login (Plymouth), also the Matrix card in
+               Omarchy's Style > Unlock. Needs sudo.
   widget       The switchboard on the bar: these switches, one click away
 USAGE
 }

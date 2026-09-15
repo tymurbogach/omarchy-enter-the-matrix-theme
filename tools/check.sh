@@ -245,6 +245,63 @@ PY
   ) || failures=$((failures + 1))
 }
 
+# --- Style > Unlock ------------------------------------------------------------
+# The derived row, against this machine's Omarchy menu, in a scratch HOME. Each
+# choice runs through a fake switcher and a fake launcher, so every branch is
+# seen without sudo and without a terminal.
+
+check_menu() {
+  section "Style > Unlock (lib/derive-menu.py)"
+  local omarchy="${OMARCHY_PATH:-/usr/share/omarchy}"
+  if [[ ! -f $omarchy/default/omarchy/omarchy-menu.jsonc ]]; then
+    echo "  skip: no Omarchy menu installed" >&2
+    return 0
+  fi
+  (
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    mkdir -p "$tmp/home" "$tmp/fake"
+    export HOME="$tmp/home" OMARCHY_PATH="$omarchy" OMARCHY_MATRIX_PROVIDER="$ROOT/provider.json"
+    menu="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+    slug=$(jq -r .slug "$ROOT/provider.json")
+    cli="$HOME/.local/bin/$(jq -r .cli "$ROOT/provider.json")"
+
+    "$ROOT/lib/derive-menu.py" >/dev/null || { echo "  FAIL: no derive into an empty HOME" >&2; exit 1; }
+    first=$(cat "$menu")
+    "$ROOT/lib/derive-menu.py" >/dev/null && [[ $(cat "$menu") == "$first" ]] ||
+      { echo "  FAIL: a second derive changed the file" >&2; exit 1; }
+
+    # Read back with the same two rules as Omarchy's stripJsonc (MenuModel.js).
+    action=$(python3 - "$menu" <<'PY'
+import json, re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+raw = re.sub(r"^\s*//[^\n]*(\n|$)", "", raw, flags=re.M)
+raw = re.sub(r",(\s*[}\]])", r"\1", raw)
+print(json.loads(raw)["style.unlock"]["action"])
+PY
+    ) || { echo "  FAIL: the menu does not parse the way Omarchy parses it" >&2; exit 1; }
+
+    printf '#!/bin/bash\necho "$CHOICE"\n' >"$tmp/fake/omarchy-plymouth-switcher"
+    printf '#!/bin/bash\nprintf "%%s" "$*" >"$OUT"\n' >"$tmp/fake/omarchy-launch-floating-terminal-with-presentation"
+    chmod +x "$tmp/fake"/*
+    expect() { # <choice> <the command that the terminal must run>
+      local got
+      CHOICE="$1" OUT="$tmp/out" PATH="$tmp/fake:$PATH" bash -c "$action"
+      got=$(cat "$tmp/out")
+      rm -f "$tmp/out"
+      [[ $got == "$2" ]] || { echo "  FAIL: $1 runs [$got], want [$2]" >&2; exit 1; }
+      bash -n -c "$got" || { echo "  FAIL: $1 hands the terminal a command that bash cannot read" >&2; exit 1; }
+    }
+    expect "$slug" "'$cli' boot on"
+    expect default "omarchy-plymouth-reset && '$cli' boot off"
+    expect tokyo-night "omarchy-plymouth-set-by-theme tokyo-night && '$cli' boot off"
+
+    "$ROOT/lib/derive-menu.py" --remove >/dev/null
+    cmp -s "$menu" "$omarchy/config/omarchy/extensions/omarchy-menu.jsonc" ||
+      { echo "  FAIL: --remove did not give back Omarchy's template" >&2; exit 1; }
+  ) || failures=$((failures + 1))
+}
+
 # --- coherence: widget repo ----------------------------------------------------
 
 check_widget_coherence() {
@@ -301,6 +358,7 @@ else
   check_main_coherence
   check_repo_hygiene
   check_ownership
+  check_menu
 fi
 
 if ((failures > 0)); then

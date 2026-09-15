@@ -86,6 +86,14 @@ done
 # holds that flag, hand it back. A flag that the user set stays (lib/pack.sh).
 release_screensaver_flag
 
+# Style > Unlock goes back to Omarchy's own row (lib/derive-menu.py). An older
+# install has no such block, and no deriver to take it out.
+if [[ -x $HERE/lib/derive-menu.py ]]; then
+  echo "· handing Style > Unlock back to Omarchy"
+  OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-menu.py" --remove >/dev/null ||
+    echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
+fi
+
 # The boot splash is the only piece that lives outside your home directory, so
 # it is also the only one that would survive an uninstall unnoticed. It needs a
 # password and rebuilds the initramfs, which is why it is asked for last.
@@ -96,7 +104,13 @@ current_plymouth=$(plymouth-set-default-theme 2>/dev/null) ||
 # is only needed when OURS is the live one. Deleting the folder is needed
 # whenever the folder exists -- and it exists after any `boot off`, which is
 # precisely the case the old `if` skipped, leaving the theme on disk forever.
-if [[ ${current_plymouth:-} == "$PLYMOUTH_THEME" ]]; then
+#
+# Omarchy's own still splash can carry this theme too: Style > Unlock installs
+# it whenever the pack's row is not in charge. With the theme about to go, that
+# goes as well. --keep-theme keeps it, like the theme.
+omarchy_plymouth=$(omarchy-plymouth-current 2>/dev/null) || omarchy_plymouth=""
+if [[ ${current_plymouth:-} == "$PLYMOUTH_THEME" ]] ||
+  { ((!KEEP_THEME)) && [[ $omarchy_plymouth == "$SLUG" ]]; }; then
   echo "· handing the boot splash back (needs your password, rebuilds the initramfs)"
   omarchy-plymouth-reset ||
     echo "  skipped — undo it later with: omarchy plymouth reset" >&2

@@ -190,6 +190,7 @@ mkdir -p "$BIN_DIR" "$SHARE_DIR/bin" "$SHARE_DIR/lib"
 install -m 755 "$HERE/bin/$CLI" "$SHARE_DIR/bin/$CLI"
 install -m 755 "$HERE/lib/derive-lock.py" "$SHARE_DIR/lib/derive-lock.py"
 install -m 755 "$HERE/lib/derive-plymouth.py" "$SHARE_DIR/lib/derive-plymouth.py"
+install -m 755 "$HERE/lib/derive-menu.py" "$SHARE_DIR/lib/derive-menu.py"
 # Imported by both derivers, and the python half of the provider lookup.
 install -m 644 "$HERE/lib/provider.py" "$SHARE_DIR/lib/provider.py"
 # Sourced by the CLI and both scripts; without it nothing runs.

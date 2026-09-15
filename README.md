@@ -67,7 +67,7 @@ omarchy-matrix update            # pull the latest version, then doctor
 | `wallpaper` | Rain on the desktop, above the wallpaper and below every window. Clicks go through it, and Omarchy's own background is not touched. On mains it always rains; on battery, only while no window is on the active workspace. |
 | `screensaver` | Omarchy's own screensaver, with the rain drawn over it. Omarchy still decides the rest: your `shell.json` idle timing, Stay Awake, the key that ends it and the lock that follows it. |
 | `lock` | Rain behind the password field. Derived from your own lock, never shipped as a copy, so Omarchy's PAM and fingerprint flows keep arriving. |
-| `boot` | The screen before login, typing out the four lines from the film — and two more on the way out, different for a shutdown and for a reboot. Needs your password and rebuilds the initramfs, so it never applies on its own. |
+| `boot` | The screen before login, typing out the four lines from the film — and two more on the way out, different for a shutdown and for a reboot. Pick the Matrix card in Omarchy's **Style › Unlock**, or run `omarchy-matrix boot on`. Any other card in Unlock boots that theme, with nothing of Matrix left. Either way it is one rebuild of the initramfs and needs your password, so it never applies on its own. |
 | `widget` | The Matrix icon on the bar: the four switches above with a ✓ each, plus Repair and Uninstall, and Update when a newer version is out. The panel's title carries the version you run. Lives in its own repo, [omarchy-matrix-widget](https://github.com/tymurbogach/omarchy-matrix-widget), fetched automatically by `install.sh`. |
 
 The desktop rain is one more background in the carousel, `1-live-rain`.
@@ -114,7 +114,7 @@ Automatic:
 |---|---|
 | `omarchy theme set enter-the-matrix` | Whatever you had on comes back |
 | `omarchy theme set <other>` | The pack stands down, keeping your settings |
-| `omarchy update` | The lock and the boot splash are derived again from the updated sources |
+| `omarchy update` | The lock, the boot splash and the Style › Unlock row are derived again from the updated sources |
 
 Standing down means: the plugin is disabled, the bar icon goes, Omarchy's
 screensaver shows without the rain, and **the lock clone is deleted** — with
@@ -171,6 +171,7 @@ background, nor the bar:
 ~/.config/omarchy/enter-the-matrix.json                                   which pieces are on
 ~/.config/omarchy/hooks/{theme-set,post-update}.d/enter-the-matrix        generated wrappers
 ~/.config/omarchy/shell.json                                              one entry in the bar layout
+~/.config/omarchy/extensions/omarchy-menu.jsonc                           one marked block: Style › Unlock
 ~/.local/bin/omarchy-matrix                                               link to the share dir
 ~/.local/share/omarchy-matrix/{bin,lib,provider.json,uninstall.sh}        the pack itself
 ~/.cache/omarchy-matrix/update.json                                       the last update check
@@ -178,8 +179,13 @@ background, nor the bar:
 /usr/share/plymouth/themes/omarchy-matrix/                                only while `boot` is on
 ```
 
-The last two are the derived pieces, and neither overwrites the original:
-`omarchy.lock` and Plymouth's `omarchy` theme stay where they were.
+The last two are the derived pieces, and neither overwrites the original.
+`omarchy.lock` stays where it was. Plymouth's `omarchy` theme changes only
+through Omarchy's own `omarchy plymouth set by theme`, the command that its
+Style › Unlock menu runs.
+
+The Unlock row is derived too: the pack builds it from Omarchy's own row on
+every run, and if Omarchy changes that row, Omarchy's original comes back.
 
 "Only while it is on" is meant literally, including for the one path outside your
 home directory: `omarchy-matrix boot off` hands the splash back **and** removes

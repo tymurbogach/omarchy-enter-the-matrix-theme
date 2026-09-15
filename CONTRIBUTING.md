@@ -289,6 +289,31 @@ sets the border colours but not the thickness or the rounding.
 only `action` replaces the good icon and label with blanks. The comment in the
 extensions file says otherwise, and it is wrong.
 
+**No hook runs after Style › Unlock, so the pack replaces the row.** The Unlock
+row runs `omarchy-plymouth-set-by-theme`, which installs colours and one still
+image. No Plymouth command of Omarchy's calls `omarchy-hook`.
+
+`lib/derive-menu.py` builds a replacement from Omarchy's own row. The Matrix
+card runs `omarchy-matrix boot on`. Every other choice runs Omarchy's command
+and then `boot off`, in the same terminal, so `sudo` asks once.
+
+Three anchors in Omarchy's action must each occur exactly once. If one does
+not, the deriver takes its block out, Omarchy's own row comes back, and the
+`post-update` hook sends a notification.
+
+Omarchy loads exactly one extension file, so the replacement is a marked block
+in the user's file. Three rules keep that file readable:
+
+- `stripJsonc` (`MenuModel.js:1`) removes only whole-line `//` comments, so the
+  block uses whole-line comments only.
+- The block goes right after the opening brace, and its row ends with a comma.
+  Omarchy allows a trailing comma, so no line of the user's changes.
+- If the user has a `style.unlock` row of their own, the pack leaves it alone.
+
+**`grep -r` skips the commands in `/usr/share/omarchy/bin`.** They are
+symlinks, and `-r` does not follow a symlink that it finds inside a directory.
+A search for `omarchy-hook` with `-r` found nothing. Use `grep -R`.
+
 **In jq, `(.[$k] // true)` returns `true` when the value is `false`.** Use
 `if has($k) then .[$k] else true end` instead.
 
@@ -653,9 +678,28 @@ file both read `shutdown` under `--mode=shutdown`.
 `tools/preview-plymouth.sh --mode NAME` exists for this. It photographs the
 exit splashes without a shutdown.
 
-**`omarchy plymouth current` cannot see our boot theme.** It identifies a theme
-by a comparison of `logo.png` inside Omarchy's own folder, and our theme
-installs separately. Use `plymouth-set-default-theme` with no arguments.
+**`omarchy plymouth current` sees only Omarchy's own splash.** It identifies a
+theme by a comparison of `logo.png` inside Omarchy's own folder, and our
+animated theme installs separately. Use `plymouth-set-default-theme` with no
+arguments.
+
+So Style › Unlock does not mark the Matrix card while the animation boots. The
+pack could: run Omarchy's `plymouth set by theme` first, then the animation.
+That was tried. It cost a second rebuild of the initramfs and a second screen
+of build log, for a highlight in a menu.
+
+**Omarchy's Plymouth publisher refuses a theme folder that root does not own.**
+`omarchy-plymouth-set` checks every folder on the path: owner root, and not
+writable by group or others. On this machine, `/usr/share/plymouth/themes/omarchy`
+was owned by the user with mode 700, from the day Omarchy was installed.
+
+Every Style › Unlock choice then failed, with the pack and without it. The
+floating terminal still printed "Done!", because it prints that whatever the
+command returned. The pack's step after it never ran, so nothing else said so.
+
+The repair is `sudo chown root:root` and `sudo chmod 755` on that folder. To
+see the refusal, read the terminal above "Done!", or run
+`omarchy plymouth set by theme <theme>` from a terminal of your own.
 
 ## Before you ship: the clean-room test
 
@@ -692,7 +736,10 @@ release.
    - `~/.config/omarchy/enter-the-matrix.json`;
    - the theme directory;
    - the flag `~/.local/state/omarchy/toggles/screensaver-off`, unless you set
-     it yourself. The pack set it up to 1.2.0.
+     it yourself. The pack set it up to 1.2.0;
+   - the `enter-the-matrix` block in `~/.config/omarchy/extensions/omarchy-menu.jsonc`;
+   - Omarchy's own splash set to this theme: `omarchy plymouth current` must
+     not print `enter-the-matrix`.
 
    The repo had the name `omarchy-matrix` until 2026-08-31. A machine with an
    older install also has `~/.config/omarchy/matrix.json`,
@@ -716,6 +763,11 @@ release.
      0 %, part way and full. No scenario alone reaches the dots or the track:
      see the trap about the doctored stage. The two exit splashes are
      `--mode shutdown` and `--mode reboot`, and they need no reboot either.
+   - Style › Unlock: pick the Matrix card. Omarchy's terminal must ask for the
+     password once, rebuild the initramfs once, and look like any other card.
+     Then `plymouth-set-default-theme` prints `omarchy-matrix`. Pick another
+     card: it then prints `omarchy`, `omarchy plymouth current` names that
+     card, and `/usr/share/plymouth/themes/omarchy-matrix/` is gone.
 
    Every non-visual check once passed while the machine locked to Omarchy's
    blurred wallpaper. Only the picture showed the fault.
