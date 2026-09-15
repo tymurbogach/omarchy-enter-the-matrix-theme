@@ -179,6 +179,13 @@ resolve_widget_src() {
 echo "· plugin $PLUGIN_ID"
 stage_plugin "$PLUGIN_ID" "$HERE/$PLUGIN_SRC" "${PLUGIN_FILES[@]}"
 
+# The rain's background, first in Omarchy's list for this theme (lib/pack.sh).
+# The link goes to the theme folder that Omarchy knows, not to a working copy
+# that can go away.
+live_theme=$(omarchy-theme-dir "$SLUG" 2>/dev/null) || live_theme=""
+[[ -n $live_theme && -f $live_theme/$LIVE_BACKGROUND ]] || live_theme="$HERE"
+offer_live_background "$live_theme"
+
 # --- the CLI ----------------------------------------------------------------
 # The share dir mirrors the repo: bin/ holds the one command, lib/ its python,
 # provider.json its names, uninstall.sh its own undo. ~/.local/bin holds only a
@@ -299,7 +306,10 @@ ask() {
   [[ ${reply,,} != n* ]]
 }
 
+first_install=0
+w=false
 if [[ ! -f $CONFIG ]]; then
+  first_install=1
   # A first install. A screensaver-off flag that is already here is the user's
   # own, so release_screensaver_flag (lib/pack.sh) must leave it alone.
   mkdir -p "$SHARE_DIR" && touch "$SHARE_DIR/.screensaver-v2"
@@ -335,6 +345,13 @@ echo
 #   when the shell goes down segfaults quickshell (#972), and staging two
 #   plugins plus a lock clone is exactly that workload.
 restart_shell || true
+
+# A first install that asked for the rain starts on it. After that the
+# background is Omarchy's: a theme set starts on the rain by itself.
+if ((first_install)) && [[ $w == true && -e $LIVE_LINK ]] &&
+  [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null) == "$SLUG" ]]; then
+  omarchy-theme-bg-set "$LIVE_LINK" >/dev/null 2>&1 || true
+fi
 
 # The boot splash is last because it is the only piece that needs a password and
 # rebuilds the initramfs. Without a terminal there is nobody to ask, and a

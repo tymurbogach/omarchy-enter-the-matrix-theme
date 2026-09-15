@@ -396,44 +396,17 @@ sync_plugin() {
   fi
 }
 
-# The desktop rain is picked like any other background in the carousel, so
-# switching the piece on without selecting that background would show nothing:
-# a ✓ in the menu and an unchanged screen. Switching it on selects it; switching
-# it off moves away from it, because sitting on the still frame looks exactly
-# like rain that has frozen.
-#
-# Careful with `omarchy theme set`: it rotates to the NEXT background of the
-# theme, so re-applying the theme takes you off the live background. That
-# theme-set hook does not force it -- that would be fighting Omarchy -- and this
-# switch does it instead.
-# The live background is whichever file carries "-live-" in its name, never a
-# fixed number: sort order decides the theme's default and gets reshuffled.
-#
-# It used to be a screenshot of the shader, which was a poor thing to hand
-# someone who installed the theme alone -- a frozen frame of the one thing that
-# is supposed to move. Now a real still from the film does all three jobs:
-# thumbnail in the picker, the marker that turns the rain on, and the frame you
-# are left looking at if the plugin is off.
-BACKGROUNDS="$HOME/.local/state/omarchy/current/theme/backgrounds"
-
-live_background() {
-  local f
-  for f in "$BACKGROUNDS"/*-live-*; do
-    [[ -f $f ]] || continue
-    echo "$f"
-    return 0
-  done
-  return 1
-}
-
+# The desktop rain is picked like any other background, in Style > Background.
+# offer_live_background (lib/pack.sh) puts it first in Omarchy's list, so a
+# theme set starts on it. The pack never forces it afterwards: the background
+# is Omarchy's choice and the user's.
 on_live_background() {
   [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) == *-live-* ]]
 }
 
 select_live_background() {
-  local live
-  live=$(live_background) || return 0
-  on_live_background || omarchy-theme-bg-set "$live" >/dev/null
+  [[ -e $LIVE_LINK ]] || return 0
+  on_live_background || omarchy-theme-bg-set "$LIVE_LINK" >/dev/null
 }
 
 apply_wallpaper() {
@@ -798,9 +771,13 @@ cmd_status() {
 cmd_doctor() {
   # Asserts everything again. This is what to run after an
   # `omarchy refresh shell`, which rewrites shell.json and leaves the plugin off.
-  local failures=0
+  local failures=0 theme
   echo "Checking the pack..."
   sync_files
+  # The rain's background belongs to the theme's own list, so it is offered
+  # whichever theme is current. Omarchy shows it only under this theme.
+  theme=$(theme_dir) || theme=""
+  [[ -z $theme ]] || offer_live_background "$theme"
   # Style > Unlock belongs to `boot`, which follows the system and not the
   # theme, so it is derived again here whichever theme is current.
   apply_unlock_menu || failures=1
@@ -826,14 +803,6 @@ cmd_doctor() {
   fi
   release_screensaver_flag
   sync_plugin || failures=1
-  # The background too, when the piece is on. This is the other half of the ✓
-  # that lied: `omarchy theme set` rotates to the next background, so coming
-  # back to this theme lands on a still and the rain the user asked for is gone.
-  # It only ever fights the rotation for somebody who explicitly asked for the
-  # rain, which the settings already record -- and the carousel (`bg next`, the
-  # picker) never calls a hook, so a deliberate pick inside the theme still
-  # stands until the next `theme set`.
-  [[ $(read_setting wallpaper) != "true" ]] || select_live_background
   apply_widget || failures=1
   [[ $(read_setting lock) != "true" ]] || apply_lock || failures=1
   nudge_shell

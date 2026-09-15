@@ -16,7 +16,7 @@ pack_load_provider() {
     echo "pack: cannot find provider.json" >&2
     return 1
   fi
-  eval "$(jq -r '@sh "SLUG=\(.slug) DISPLAY_NAME=\(.displayName) CLI=\(.cli) ACCENT=\(.accent) PLUGIN_ID=\(.plugin.id) PLUGIN_SRC=\(.plugin.dir) WIDGET_ID=\(.widget.id) WIDGET_SECTION=\(.widget.section) WIDGET_REPO=\(.widget.repo) WIDGET_REF=\(.widget.ref) PLYMOUTH_THEME=\(.plymouth.theme) IPC=\(.ipc) RAIN_QML=\(.rainFiles[0])"' "$1")" ||
+  eval "$(jq -r '@sh "SLUG=\(.slug) DISPLAY_NAME=\(.displayName) CLI=\(.cli) ACCENT=\(.accent) PLUGIN_ID=\(.plugin.id) PLUGIN_SRC=\(.plugin.dir) WIDGET_ID=\(.widget.id) WIDGET_SECTION=\(.widget.section) WIDGET_REPO=\(.widget.repo) WIDGET_REF=\(.widget.ref) PLYMOUTH_THEME=\(.plymouth.theme) IPC=\(.ipc) RAIN_QML=\(.rainFiles[0]) LIVE_BACKGROUND=\(.liveBackground // "")"' "$1")" ||
     { echo "pack: $1 is not valid JSON" >&2; return 1; }
 }
 
@@ -29,6 +29,30 @@ pack_set_paths() {
   HOOKS="$HOME/.config/omarchy/hooks"
   CONFIG="$HOME/.config/omarchy/$SLUG.json"
   WIDGET_CLONE="$SHARE_DIR/widget-src"
+  USER_BACKGROUNDS="$HOME/.config/omarchy/backgrounds/$SLUG"
+  LIVE_LINK="$USER_BACKGROUNDS/${LIVE_BACKGROUND##*/}"
+}
+
+# The desktop rain is picked like any other background. Its still is not in the
+# theme's backgrounds/, so the theme alone never offers it. The pack links it
+# into Omarchy's folder for the user's own backgrounds of this theme. Omarchy
+# lists that folder first (omarchy-theme-set sorts the full paths), so a theme
+# set starts on the rain, and Style > Background shows it like any other.
+offer_live_background() { # <theme dir>
+  local source="$1/$LIVE_BACKGROUND"
+  [[ -n $LIVE_BACKGROUND && -f $source ]] || return 0
+  [[ $(readlink "$LIVE_LINK" 2>/dev/null) != "$source" ]] || return 0
+  # A file of the user's own under the same name stays.
+  [[ ! -e $LIVE_LINK || -L $LIVE_LINK ]] || return 0
+  mkdir -p "$USER_BACKGROUNDS" && ln -sfn "$source" "$LIVE_LINK"
+}
+
+# Takes back the link and nothing else: the folder can also hold backgrounds of
+# the user's own. Never fails.
+withdraw_live_background() {
+  [[ ! -L $LIVE_LINK ]] || rm -f "$LIVE_LINK"
+  rmdir "$USER_BACKGROUNDS" 2>/dev/null
+  return 0
 }
 
 # Whether a lock clone is ours: cloned from omarchy.lock AND (marked as derived

@@ -58,6 +58,15 @@
   ],
   "rainFiles": ["MatrixRain.qml", "matrix.frag.qsb", "glyphs.png"],
 
+  "//liveBackground": [
+    "The background that turns the desktop rain on. The plugin watches for the",
+    "-live- in its name. It is not in backgrounds/, so the theme alone never",
+    "offers it. The pack links it into Omarchy's folder for your own",
+    "backgrounds of this theme, ~/.config/omarchy/backgrounds/<slug>/.",
+    "Omarchy lists that folder first, so `omarchy theme set` starts on the rain."
+  ],
+  "liveBackground": "live/0-live-rain.png",
+
   "plymouth": {
     "theme": "omarchy-matrix",
     "name": "Omarchy Matrix",

@@ -123,6 +123,17 @@ plugindir = root / provider["plugin"]["dir"]
 for name in provider["plugin"]["files"]:
     if not (plugindir / name).is_file():
         bad(f"plugin file missing: {name}")
+# The rain's background: a file of its own, marked by -live-, and never in the
+# carousel as well. There, the theme alone would offer a still that never moves,
+# and the pack would list the rain twice.
+live = provider.get("liveBackground", "")
+if "-live-" not in pathlib.Path(live).name:
+    bad(f"liveBackground is {live!r}, want a file name with -live- in it")
+elif not (root / live).is_file():
+    bad(f"liveBackground {live} is missing")
+stray = sorted(p.name for p in (root / "backgrounds").glob("*-live-*"))
+if stray:
+    bad(f"backgrounds/ holds {stray}: the rain's still goes in liveBackground only")
 # The widget pin is a full commit SHA, never a branch.
 if not re.fullmatch(r"[0-9a-f]{40}", provider["widget"].get("ref", "")):
     bad(f"widget.ref is {provider['widget'].get('ref')!r}, want 40 hex")

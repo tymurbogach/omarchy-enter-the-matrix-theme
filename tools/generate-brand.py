@@ -12,12 +12,13 @@
                         rain background with a terminal window and the palette
                         below it.
 
-Needs rsvg-convert and ImageMagick, plus the theme's -live- background, which is
-committed in backgrounds/ rather than generated -- generate-backgrounds.py has
-not produced it since the live background stopped being a fresh render.
+Needs rsvg-convert and ImageMagick, plus the rain's background (provider.json's
+liveBackground), which is committed rather than generated --
+generate-backgrounds.py has not produced it since the live background stopped
+being a fresh render.
 """
 
-import glob
+import json
 import os
 import random
 import subprocess
@@ -226,9 +227,10 @@ def main():
     subprocess.run(["magick", pu, "-strip", "-dither", "None", "-colors", "256", pu], check=True)
     print(f"  preview-unlock.png  {os.path.getsize(pu) // 1024} KB")
 
-    background = next(iter(sorted(glob.glob(os.path.join(ROOT, "backgrounds", "*-live-*")))), "")
+    with open(os.path.join(ROOT, "provider.json"), encoding="utf-8") as fh:
+        background = os.path.join(ROOT, json.load(fh)["liveBackground"])
     if not os.path.exists(background):
-        print("  ! no backgrounds/*-live-* found. That file is committed, not "
+        print(f"  ! {background} not found. That file is committed, not "
               "generated: restore it from git rather than regenerating it.",
               file=sys.stderr)
         return 1

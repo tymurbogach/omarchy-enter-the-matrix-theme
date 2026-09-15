@@ -7,7 +7,7 @@
 It generates NOTHING on its own any more, and that is deliberate: it used to
 carry a preset table, and the last entry in it (`5-minimal`) painted a field
 that stopped a third of the way down the screen. Every background the theme
-ships is now committed -- the stills and `1-live-rain.png` alike -- so an
+ships is now committed -- the stills and `live/0-live-rain.png` alike -- so an
 argument-less run had one job left, and it was to overwrite a file somebody had
 deliberately removed. `--out` is required.
 

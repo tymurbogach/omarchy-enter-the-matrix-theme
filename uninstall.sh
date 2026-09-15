@@ -225,7 +225,9 @@ echo "· removing the theme"
 rm -rf "$THEME_DIR"
 # Omarchy remembers a background per theme, and a hook of the user's may read it.
 rm -f "$HOME/.local/state/omarchy/backgrounds/$SLUG"
-rm -rf "$HOME/.config/omarchy/backgrounds/$SLUG"
+# The rain's link in the folder for the user's own backgrounds. Only the link:
+# the folder can hold backgrounds of the user's own (lib/pack.sh).
+withdraw_live_background
 
 cat <<DONE
 
