@@ -85,10 +85,11 @@ remove_plugin "$PLUGIN_ID"
 # An install older than 1.3 also had a bar widget.
 retire_widget
 
-# Style > Unlock goes back to Omarchy's own row (lib/derive-menu.py). An older
-# install has no such block, and no deriver to take it out.
+# Style > Unlock and Remove > Theme go back to Omarchy's own rows
+# (lib/derive-menu.py). An older install has no such block, and no deriver to
+# take it out.
 if [[ -x $HERE/lib/derive-menu.py ]]; then
-  echo "· handing Style > Unlock back to Omarchy"
+  echo "· handing Omarchy's menu rows back"
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-menu.py" --remove >/dev/null ||
     echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
 fi

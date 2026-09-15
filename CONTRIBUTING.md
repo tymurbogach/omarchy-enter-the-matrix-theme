@@ -339,7 +339,21 @@ in the user's file. Three rules keep that file readable:
   block uses whole-line comments only.
 - The block goes right after the opening brace, and its row ends with a comma.
   Omarchy allows a trailing comma, so no line of the user's changes.
-- If the user has a `style.unlock` row of their own, the pack leaves it alone.
+- If the user has a row of their own with the same id, the pack leaves it
+  alone.
+
+**Omarchy runs no hook when a theme is removed.** `omarchy-theme-remove` deletes
+the theme's folder and nothing else. The pack stayed installed, with the lock
+clone, the hooks and the boot splash of a theme that was gone.
+
+So the same block replaces Remove › Theme too. Omarchy's own command runs
+first, unchanged, and then `omarchy-matrix hook theme-remove`. If this theme's
+folder is gone, that stands the pack down and opens Omarchy's floating
+terminal with `omarchy-matrix uninstall`. The terminal is there for the
+password that the boot splash needs.
+
+`omarchy theme remove` from a terminal passes no menu. The theme-set hook
+catches it at the next theme change and does the same.
 
 **`grep -r` skips the commands in `/usr/share/omarchy/bin`.** They are
 symlinks, and `-r` does not follow a symlink that it finds inside a directory.
@@ -824,7 +838,8 @@ release.
    - Back: the background is the rain again with no command of ours, and the
      lock rains. Each way restarts the shell once.
 6. **Uninstall, and compare the machine with phase 1.** Anything that is still
-   there is a bug, not a detail.
+   there is a bug, not a detail. Once per release, uninstall through Style ›
+   Remove › Theme instead of the command.
 
 ### Run the test without a keyboard or a password
 

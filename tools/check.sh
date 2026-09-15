@@ -276,14 +276,27 @@ check_menu() {
       { echo "  FAIL: a second derive changed the file" >&2; exit 1; }
 
     # Read back with the same two rules as Omarchy's stripJsonc (MenuModel.js).
-    action=$(python3 - "$menu" <<'PY'
+    row_action() { # <row id>
+      python3 - "$menu" "$1" <<'PY'
 import json, re, sys
 raw = open(sys.argv[1], encoding="utf-8").read()
 raw = re.sub(r"^\s*//[^\n]*(\n|$)", "", raw, flags=re.M)
 raw = re.sub(r",(\s*[}\]])", r"\1", raw)
-print(json.loads(raw)["style.unlock"]["action"])
+print(json.loads(raw)[sys.argv[2]]["action"])
 PY
-    ) || { echo "  FAIL: the menu does not parse the way Omarchy parses it" >&2; exit 1; }
+    }
+    action=$(row_action style.unlock) && remove=$(row_action remove.theme) ||
+      { echo "  FAIL: the menu does not parse the way Omarchy parses it" >&2; exit 1; }
+
+    # Remove > Theme: Omarchy's command first and unchanged, then ours.
+    want="omarchy-theme-remove; [[ ! -x '$cli' ]] || '$cli' hook theme-remove"
+    [[ $remove == "$want" ]] || { echo "  FAIL: remove.theme runs [$remove], want [$want]" >&2; exit 1; }
+    bash -n -c "$remove" || { echo "  FAIL: remove.theme is not a command that bash can read" >&2; exit 1; }
+
+    # A block from 1.2.x, under its old first line, gives way to the new one.
+    sed -i "s|^  // >>> $slug: rows of Omarchy's menu,|  // >>> $slug: Style > Unlock,|" "$menu"
+    "$ROOT/lib/derive-menu.py" >/dev/null && [[ $(cat "$menu") == "$first" ]] ||
+      { echo "  FAIL: a block from 1.2.x did not give way to the new one" >&2; exit 1; }
 
     printf '#!/bin/bash\necho "$CHOICE"\n' >"$tmp/fake/omarchy-plymouth-switcher"
     printf '#!/bin/bash\nprintf "%%s" "$*" >"$OUT"\n' >"$tmp/fake/omarchy-launch-floating-terminal-with-presentation"

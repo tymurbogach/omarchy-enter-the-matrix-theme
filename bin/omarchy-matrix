@@ -384,9 +384,10 @@ remove_plymouth_theme() {
   sudo rm -rf "$dir"
 }
 
-# Style > Unlock: the card of this theme boots animated (lib/derive-menu.py).
-# It belongs to the boot splash, which follows the system and not the theme, so
-# it stays while another theme is current.
+# Two rows of Omarchy's menu (lib/derive-menu.py): in Style > Unlock the card of
+# this theme boots animated, and Remove > Theme takes the pack with the theme.
+# They follow the system and not the theme, so they stay while another theme
+# is current.
 apply_unlock_menu() {
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-menu.py"
 }
@@ -397,13 +398,35 @@ apply_unlock_menu() {
 # generated file carries no provider names at all.
 
 # Picking our theme brings the pack up; picking any other stands it down. Also
-# the net that catches `omarchy refresh shell`.
+# the net that catches `omarchy refresh shell`, and a theme removed from a
+# terminal (cmd_hook_theme_remove).
 cmd_hook_theme_set() {
-  if [[ ${1:-} == "$SLUG" ]]; then
+  if theme_removed; then
+    cmd_hook_theme_remove
+  elif [[ ${1:-} == "$SLUG" ]]; then
     cmd_doctor >/dev/null 2>&1 || true
   else
     cmd_suspend >/dev/null 2>&1 || true
   fi
+}
+
+# Omarchy's Remove > Theme and `omarchy theme remove` delete the theme's folder
+# and nothing else, and no hook runs after them. Without its theme the pack has
+# nothing to serve, so it follows: it stands down at once, and the full
+# uninstall opens in Omarchy's floating terminal. The terminal is there for
+# the password that the boot splash needs.
+#
+# Remove > Theme calls this right after Omarchy's own command
+# (lib/derive-menu.py). A removal from a terminal passes no menu, so the
+# theme-set hook calls it at the next theme change.
+theme_removed() {
+  [[ ! -d $HOME/.config/omarchy/themes/$SLUG && ! -d ${OMARCHY_PATH:-/usr/share/omarchy}/themes/$SLUG ]]
+}
+
+cmd_hook_theme_remove() {
+  theme_removed || return 0
+  cmd_suspend >/dev/null 2>&1 || true
+  omarchy-launch-floating-terminal-with-presentation "'$BIN_DIR/$CLI' uninstall" >/dev/null 2>&1 &
 }
 
 # After `omarchy update`: the lock, the boot splash and the Unlock row come from
@@ -416,11 +439,12 @@ cmd_hook_post_update() {
     derive_boot || echo "$DISPLAY_NAME: could not derive the boot splash again" >&2
   fi
 
-  # doctor derived Style > Unlock again. If Omarchy's row changed shape, the
-  # deriver handed the row back to Omarchy. Say so: nobody reads doctor here.
+  # doctor derived the menu rows again. If one of Omarchy's rows changed shape,
+  # the deriver handed that row back to Omarchy. Say so: nobody reads doctor
+  # here.
   if ! apply_unlock_menu >/dev/null 2>&1; then
     omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
-      "Omarchy's Unlock menu has changed. Its Matrix card gives the still splash for now." \
+      "Omarchy's menu has changed, so Style › Unlock or Remove › Theme is Omarchy's own for now." \
       2>/dev/null || true
   fi
 
@@ -455,6 +479,11 @@ cmd_status() {
   local version
   version=$(pack_version)
   printf '  %s%s\n\n' "$DISPLAY_NAME" "${version:+ $version}"
+
+  if theme_removed; then
+    printf '  The %s theme is gone. Remove the rest of the pack: %s uninstall\n\n' \
+      "$DISPLAY_NAME" "$SELF"
+  fi
 
   if ! pack_in_effect; then
     printf '  Stood down: the theme is %s. Back with Style › Theme › %s.\n' \
@@ -601,6 +630,7 @@ hook)
   event="${1:-}"; shift || true
   case "$event" in
   theme-set) cmd_hook_theme_set "$@" ;;
+  theme-remove) cmd_hook_theme_remove ;;
   post-update) cmd_hook_post_update "$@" ;;
   *) fail "unknown hook: $event" ;;
   esac

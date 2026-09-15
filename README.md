@@ -127,12 +127,13 @@ afterwards nobody knows. If there is nothing recorded, it asks.
 Pass `--keep-theme` if you want the colours and backgrounds to stay behind as an
 ordinary Omarchy theme.
 
-> **Do not use Omarchy's `Remove → Theme` on its own.** That command deletes the
-> theme folder and nothing else, which would leave the plugin, the lock clone,
-> the CLI and the hooks installed and pointing at a theme that is gone.
-> Uninstall first, remove the theme after. If you already did it the other way
-> round, the share copy at `~/.local/share/omarchy-matrix/uninstall.sh` still
-> undoes the pack.
+Omarchy's **Remove › Theme** works too. Pick Enter the Matrix there. Once
+Omarchy has deleted the theme folder, its terminal opens with the same
+uninstall, for the password that the boot splash needs.
+
+From a terminal, `omarchy theme remove enter-the-matrix` deletes only the
+folder, and Omarchy tells nobody. The pack notices at your next theme change,
+stands down and opens the same terminal.
 
 ## Requirements
 
@@ -149,7 +150,7 @@ bar:
 ~/.config/omarchy/plugins/io.github.tymurbogach.enter-the-matrix/       the plugin
 ~/.config/omarchy/backgrounds/enter-the-matrix/0-live-rain.png          a link: the rain, in Style › Background
 ~/.config/omarchy/hooks/{theme-set,post-update}.d/enter-the-matrix      generated wrappers
-~/.config/omarchy/extensions/omarchy-menu.jsonc                         one marked block: Style › Unlock
+~/.config/omarchy/extensions/omarchy-menu.jsonc                         one marked block: Style › Unlock, Remove › Theme
 ~/.config/omarchy/shell.json                                            Omarchy's list of enabled plugins
 ~/.local/bin/omarchy-matrix                                             link to the share dir
 ~/.local/share/omarchy-matrix/                                          the pack itself, and the theme to return to
@@ -162,8 +163,8 @@ The last two are the derived pieces, and neither overwrites the original.
 through Omarchy's own `omarchy plymouth set by theme`, the command that its
 Style › Unlock menu runs.
 
-The Unlock row is derived too: the pack builds it from Omarchy's own row on
-every run, and if Omarchy changes that row, Omarchy's original comes back.
+The two menu rows are derived too: the pack builds each one from Omarchy's own
+row on every run, and if Omarchy changes a row, Omarchy's original comes back.
 
 "Only while it is on" is meant literally, including for the one path outside
 your home directory: another card in Style › Unlock hands the splash back **and**
