@@ -391,8 +391,17 @@ def main():
     parser.add_argument("--only", help="compose only this picture (poster, desktop, boot, ...)")
     args = parser.parse_args()
 
-    wanted = {e["shot"] for e in SINGLES}
-    wanted |= {p["shot"] for group in (BOOT, LINES, EXITS) for p in group["panels"]}
+    # Each picture asks only for its own shots, so one picture can be made
+    # again from a partial capture (capture-showcase.sh --only ...).
+    needs = {"poster": {"desktop.png", "lock.png", "boot-password.png"},
+             "preview": {"desktop.png"}}
+    needs |= {e["name"]: {e["shot"]} for e in SINGLES}
+    needs |= {g["name"]: {p["shot"] for p in g["panels"]} for g in (BOOT, LINES, EXITS)}
+    if args.only is not None and args.only not in needs:
+        print(f"unknown picture {args.only}; pick one of {', '.join(sorted(needs))}",
+              file=sys.stderr)
+        return 1
+    wanted = needs[args.only] if args.only else set().union(*needs.values())
     missing = sorted(n for n in wanted if not (args.shots / n).is_file())
     if missing:
         print(f"missing in {args.shots}: {', '.join(missing)}", file=sys.stderr)
