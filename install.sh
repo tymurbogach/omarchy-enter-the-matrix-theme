@@ -56,6 +56,8 @@ if [[ $HERE == "$HOME/.config/omarchy/themes/"* && $here_name != "$SLUG" ]]; the
 fi
 
 G=$'\033[38;2;'$((16#${ACCENT:1:2}))';'$((16#${ACCENT:3:2}))';'$((16#${ACCENT:5:2}))'m' # the provider's accent
+RED=$'\033[31m'
+BLUE=$'\033[34m'
 DIM=$'\033[2m'
 BOLD=$'\033[1m'
 OFF=$'\033[0m'
@@ -80,8 +82,10 @@ say() {
 # splash, which needs a password.
 
 #
-# The colours are Omarchy's: gum reads the GUM_* variables that Omarchy
-# generates from the current theme (default/themed/gum_env.lua.tpl).
+# Only the two names take a colour: the red pill red and the blue pill blue, in
+# the terminal's own red and blue. gum's own colours are set to none. They come
+# from the GUM_* variables that Omarchy exports at login, so a terminal opened
+# before a theme change paints the list in the old theme's lilac.
 
 HEADER="This is your last chance. After this, there is no turning back."
 RED_PILL="Red pill    You stay in Wonderland, and I show you how deep the rabbit hole goes."
@@ -89,11 +93,18 @@ BLUE_PILL="Blue pill   The story ends. You wake up in your bed with your simple 
 
 take_the_red_pill() {
   local choice=""
+  # gum hands back the text without the colour codes, so the answer compares
+  # with the plain lines above.
+  local red="$RED${RED_PILL/Red pill/Red pill$OFF}" blue="$BLUE${BLUE_PILL/Blue pill/Blue pill$OFF}"
   echo
   if command -v gum >/dev/null; then
-    choice=$(gum choose --header "$HEADER" "$RED_PILL" "$BLUE_PILL") || choice=""
+    choice=$(gum choose --header "$HEADER" \
+      --header.foreground "" --cursor.foreground "" --cursor.background "" \
+      --item.foreground "" --item.background "" \
+      --selected.foreground "" --selected.background "" \
+      "$red" "$blue") || choice=""
   else
-    printf '  %s\n\n  %s\n  %s\n\n  [R/b] ' "$HEADER" "$RED_PILL" "$BLUE_PILL"
+    printf '  %s\n\n  %s\n  %s\n\n  [R/b] ' "$HEADER" "$red" "$blue"
     read -r choice || choice=""
     if [[ ${choice,,} == b* ]]; then choice="$BLUE_PILL"; else choice="$RED_PILL"; fi
   fi
