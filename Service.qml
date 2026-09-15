@@ -21,16 +21,11 @@ Item {
   id: root
 
   readonly property string home: Quickshell.env("HOME")
-  // The filename comes from provider.json's slug. It is written here by hand
-  // because QML cannot read the provider; tools/check.sh verifies the two agree.
-  readonly property string configPath: home + "/.config/omarchy/enter-the-matrix.json"
   readonly property string backgroundLink: home + "/.local/state/omarchy/current/background"
 
-  // --- our own settings -------------------------------------------------
-  // They live in enter-the-matrix.json rather than shell.json on purpose: `omarchy
-  // refresh shell` rewrites shell.json wholesale and would take these with it.
-  property bool wantWallpaper: true
-  property bool wantScreensaver: true
+  // The plugin has no settings. Omarchy's choices decide both layers: the
+  // background says whether the desktop rains, and Omarchy's idle service
+  // says when the screensaver opens.
 
   // --- which background is selected --------------------------------------
   // The rain is picked like any other background in the carousel.
@@ -64,26 +59,6 @@ Item {
       if (toplevels[i].appId === root.screensaverAppId) return true
     }
     return false
-  }
-  readonly property bool screensaverShowing: root.wantScreensaver && root.screensaverOpen
-
-  function applyConfig(raw) {
-    var parsed = ({})
-    try { parsed = JSON.parse(raw || "{}") || ({}) } catch (e) { parsed = ({}) }
-    root.wantWallpaper = parsed.wallpaper !== false
-    root.wantScreensaver = parsed.screensaver !== false
-  }
-
-  FileView {
-    id: configFile
-    path: root.configPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.applyConfig(text())
-    // With no file the pack is complete: that is what install.sh leaves behind
-    // and what anyone expects after `omarchy plugin add`.
-    onLoadFailed: root.applyConfig("{}")
-    onFileChanged: reload()
   }
 
   // The current background is a symlink, and omarchy-theme-bg-set replaces it
@@ -135,17 +110,13 @@ Item {
 
     function refresh(): void {
       root.refreshBackground()
-      configFile.reload()
     }
 
     function status(): string {
       return JSON.stringify({
-        wallpaper: root.wantWallpaper,
-        screensaver: root.wantScreensaver,
         rainIsBackground: root.rainIsBackground,
         background: root.currentBackground,
-        screensaverOpen: root.screensaverOpen,
-        screensaverShowing: root.screensaverShowing
+        screensaverOpen: root.screensaverOpen
       })
     }
   }
@@ -163,7 +134,7 @@ Item {
       screen: modelData
       anchors { top: true; bottom: true; left: true; right: true }
       color: "transparent"
-      visible: root.wantWallpaper && root.rainIsBackground
+      visible: root.rainIsBackground
 
       // The rain starts from black every time the surface appears, rather than
       // resuming wherever it happened to be. The MatrixRain lives inside this
@@ -230,7 +201,7 @@ Item {
       screen: modelData
       anchors { top: true; bottom: true; left: true; right: true }
       color: "black"
-      visible: root.screensaverShowing
+      visible: root.screensaverOpen
 
       // Every time the screensaver comes up it rains from nothing, not from
       // wherever the last one left it.

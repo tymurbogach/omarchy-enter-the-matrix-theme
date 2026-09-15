@@ -1,6 +1,6 @@
 # lib/pack.sh -- the shell the pack's scripts share. Sourced, never executed.
 # shellcheck shell=bash
-# SC2034 off: HOOKS, CONFIG and friends are read by the scripts that source
+# SC2034 off: HOOKS, LIVE_LINK and friends are read by the scripts that source
 # this file, which shellcheck cannot see.
 # shellcheck disable=SC2034
 #
@@ -16,8 +16,11 @@ pack_load_provider() {
     echo "pack: cannot find provider.json" >&2
     return 1
   fi
-  eval "$(jq -r '@sh "SLUG=\(.slug) DISPLAY_NAME=\(.displayName) CLI=\(.cli) ACCENT=\(.accent) PLUGIN_ID=\(.plugin.id) PLUGIN_SRC=\(.plugin.dir) WIDGET_ID=\(.widget.id) WIDGET_SECTION=\(.widget.section) WIDGET_REPO=\(.widget.repo) WIDGET_REF=\(.widget.ref) PLYMOUTH_THEME=\(.plymouth.theme) IPC=\(.ipc) RAIN_QML=\(.rainFiles[0]) LIVE_BACKGROUND=\(.liveBackground // "")"' "$1")" ||
+  eval "$(jq -r '@sh "SLUG=\(.slug) DISPLAY_NAME=\(.displayName) CLI=\(.cli) ACCENT=\(.accent) PLUGIN_ID=\(.plugin.id) PLUGIN_SRC=\(.plugin.dir) PLYMOUTH_THEME=\(.plymouth.theme) IPC=\(.ipc) RAIN_QML=\(.rainFiles[0]) LIVE_BACKGROUND=\(.liveBackground // "")"' "$1")" ||
     { echo "pack: $1 is not valid JSON" >&2; return 1; }
+  # Up to 1.2.x a bar widget of the pack had this id. retire_widget takes an
+  # installed one back.
+  LEGACY_WIDGET_ID="$PLUGIN_ID.widget"
 }
 
 # Every path the machinery writes, derived from $HOME and the provider's names.
@@ -27,8 +30,10 @@ pack_set_paths() {
   SHARE_DIR="$HOME/.local/share/$CLI"
   PLUGINS_DIR="$HOME/.config/omarchy/plugins"
   HOOKS="$HOME/.config/omarchy/hooks"
-  CONFIG="$HOME/.config/omarchy/$SLUG.json"
-  WIDGET_CLONE="$SHARE_DIR/widget-src"
+  # The theme to go back to on uninstall. The theme-set hook writes it down.
+  PREVIOUS_THEME_FILE="$SHARE_DIR/previous-theme"
+  # Up to 1.2.x: a switch per piece. retire_settings takes the file back.
+  LEGACY_CONFIG="$HOME/.config/omarchy/$SLUG.json"
   USER_BACKGROUNDS="$HOME/.config/omarchy/backgrounds/$SLUG"
   LIVE_LINK="$USER_BACKGROUNDS/${LIVE_BACKGROUND##*/}"
 }
@@ -68,6 +73,18 @@ lock_is_ours() {
   [[ -f $dir/$RAIN_QML ]]
 }
 
+# `omarchy plugin clone` decides the lock clone's id: <username>.lock. Discover
+# it rather than assume it, because on another machine the username differs.
+lock_clone_id() {
+  local dir
+  for dir in "$PLUGINS_DIR"/*.lock; do
+    lock_is_ours "$dir" || continue
+    jq -r '.id' "$dir/manifest.json"
+    return 0
+  done
+  return 1
+}
+
 # Whether a plugin backup is ours and may go: the rain inside, or one of our
 # ids. A lock clone somebody made themselves has the same name shape and stays.
 ours() {
@@ -75,7 +92,7 @@ ours() {
   [[ -f "$1/manifest.json" ]] || return 1
   local id
   id=$(jq -r '.id // empty' "$1/manifest.json" 2>/dev/null)
-  [[ $id == "$PLUGIN_ID" || $id == "$WIDGET_ID" ]]
+  [[ $id == "$PLUGIN_ID" || $id == "$LEGACY_WIDGET_ID" ]]
 }
 
 # `omarchy plugin remove` renames rather than deletes, so every folder it took
@@ -96,8 +113,8 @@ remove_plugin() {
     omarchy-plugin-remove "$1" >/dev/null 2>&1 || true
 }
 
-# `omarchy plugin list` is a process, and one `status` asks it five or six
-# times. Read it once and forget it whenever something changes.
+# `omarchy plugin list` is a process, and one `status` asks it several times.
+# Read it once and forget it whenever something changes.
 PLUGIN_LIST=""
 
 plugin_list() {
@@ -151,6 +168,21 @@ restart_shell() {
   omarchy-restart-shell >/dev/null 2>&1 || return 1
 }
 
+# What the running shell has loaded from the pack: which plugins are the lock,
+# and the bytes of the rain plugin and of our lock clone. A command compares
+# this before and after its work, and restarts the shell once if it changed.
+# If nothing changed, nothing restarts: a restart blanks the bar and the
+# background, and it is the flicker that a reinstall used to show.
+pack_fingerprint() {
+  local id dirs=("$PLUGINS_DIR/$PLUGIN_ID")
+  if id=$(lock_clone_id); then dirs+=("$PLUGINS_DIR/$id"); fi
+  forget_plugin_list
+  {
+    plugin_list | jq -c '[.[] | select(.enabled and (.id | endswith(".lock"))) | .id] | sort'
+    find "${dirs[@]}" -type f -exec md5sum {} + 2>/dev/null | sort
+  } | md5sum
+}
+
 # Remove <file> only if it contains <marker>, a line that only the pack's own old
 # copy of that file carries. Never fails.
 remove_if_marked() { # <file> <marker>
@@ -188,11 +220,51 @@ clean_legacy_bins() {
 release_screensaver_flag() {
   local marker="$SHARE_DIR/.screensaver-v2" wanted
   [[ ! -f $marker ]] || return 0
-  wanted=$(jq -r 'if has("screensaver") then .screensaver else true end | tostring' "$CONFIG" 2>/dev/null) ||
+  wanted=$(jq -r 'if has("screensaver") then .screensaver else true end | tostring' "$LEGACY_CONFIG" 2>/dev/null) ||
     wanted=""
   if [[ $wanted == "true" && -f $HOME/.local/state/omarchy/toggles/screensaver-off ]]; then
     omarchy-toggle screensaver-off off >/dev/null 2>&1 || true
   fi
   mkdir -p "$SHARE_DIR" && touch "$marker"
   return 0
+}
+
+remember_previous_theme() {
+  mkdir -p "$SHARE_DIR" && printf '%s\n' "$1" >"$PREVIOUS_THEME_FILE"
+}
+
+# Up to 1.2.x each piece had a switch, kept in ~/.config/omarchy/<slug>.json.
+# The pieces now follow Omarchy's own choices, so only the theme to return to
+# on uninstall is kept, in the share dir. The screensaver flag is handed back
+# first, because only the old file can tell whose flag it is. Never fails.
+retire_settings() {
+  [[ -f $LEGACY_CONFIG ]] || return 0
+  release_screensaver_flag
+  local previous
+  previous=$(jq -r '.previousTheme // empty' "$LEGACY_CONFIG" 2>/dev/null) || previous=""
+  [[ -z $previous || -f $PREVIOUS_THEME_FILE ]] || remember_previous_theme "$previous"
+  rm -f "$LEGACY_CONFIG"
+}
+
+# Up to 1.2.x a bar widget switched the pieces. There are no switches now, so
+# the widget goes, once: its plugin (and with it its entry on the bar), its
+# backups, the cache of its repo, and the update answer that only its panel
+# read. A checkout that somebody added with `omarchy plugin add` carries a .git
+# and stays. Never fails.
+retire_widget() {
+  local dir="$PLUGINS_DIR/$LEGACY_WIDGET_ID"
+  if [[ -d $dir && ! -e $dir/.git ]]; then
+    remove_plugin "$LEGACY_WIDGET_ID"
+    forget_plugin_list
+    prune_backups
+  fi
+  rm -rf "$SHARE_DIR/widget-src" "$HOME/.cache/$CLI/update.json"
+  return 0
+}
+
+# Everything an older install leaves that this version no longer has. Each step
+# is a no-op once done, so every entry point can run it. Never fails.
+pack_migrate() {
+  retire_settings
+  retire_widget
 }

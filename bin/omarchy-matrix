@@ -1,19 +1,20 @@
 #!/bin/bash
 
-# The switchboard. Each piece turns on and off on its own.
+# The pack's command. There is nothing to switch: Omarchy's own menus decide.
 #
-#   <cli> on | off
-#   <cli> wallpaper|screensaver|lock|boot|widget on|off|toggle
-#   <cli> status [--is <piece>] [--json]
+#   <cli> status
 #   <cli> doctor
-#   <cli> update [--check [--json]]
+#   <cli> update [--check]
+#   <cli> boot on|off
+#   <cli> uninstall [--keep-theme]
+#
+# While this theme is current, the rain covers the desktop when the rain is the
+# background (Style > Background), covers Omarchy's screensaver whenever
+# Omarchy opens it, and sits behind the lock. The boot splash follows
+# Style > Unlock. Another theme stands the pack down.
 #
 # Which pack this is comes from provider.json, below: everything in here is
 # machinery, and the provider contributes the shader, its assets and its names.
-#
-# Settings live in ~/.config/omarchy/<slug>.json, a file of our own. They are
-# deliberately NOT in shell.json: `omarchy refresh shell` rewrites that file
-# wholesale and would take them with it.
 
 set -euo pipefail
 
@@ -32,8 +33,8 @@ fail() {
 # The CLI finds its own root by resolving itself: installed, it is a symlink
 # into the share dir's bin/, and in a working copy it sits in the repo's bin/.
 # Either way the root beside bin/ holds provider.json and lib/. The share dir
-# outlives theme switches, which is exactly when `suspend` and `lock off` run.
-# An explicit $OMARCHY_MATRIX_PROVIDER still wins, and is what tests use.
+# outlives theme switches, which is exactly when `suspend` runs. An explicit
+# $OMARCHY_MATRIX_PROVIDER still wins, and is what tests use.
 ROOT=$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")
 for candidate in \
   "${OMARCHY_MATRIX_PROVIDER:-}" \
@@ -50,18 +51,12 @@ done
 pack_load_provider "$PROVIDER" || fail "$PROVIDER is not valid JSON"
 pack_set_paths
 
-PIECES=(wallpaper screensaver lock boot widget)
-
 # --- state ------------------------------------------------------------------
 
 # The desktop pieces are only IN EFFECT while the pack's theme is the current
-# one:
-# picking another theme makes the theme-set hook call `suspend`, which stands
-# them down without touching the settings. Without this, `status` used to tick
-# four pieces that were in fact off, and the pack looked broken.
-#
-# `boot` is the exception: the Plymouth splash belongs to the system, not to
-# the theme, and stays put whichever theme you pick.
+# one: picking another theme makes the theme-set hook call `suspend`. The boot
+# splash is the exception, because Plymouth belongs to the system and not to
+# the theme.
 current_theme() {
   cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null
 }
@@ -70,14 +65,10 @@ pack_in_effect() {
   [[ $(current_theme) == "$SLUG" ]]
 }
 
-# `boot` does not follow the theme, so its tick asks the system instead: is our
-# Plymouth theme the one actually in use? That way the ✓ never lies, even though
-# it stays on when you switch to another theme.
-#
-# Not `omarchy plymouth current`: that one identifies the theme by comparing
-# logo.png inside Omarchy's OWN theme folder, and ours is a separate theme it
-# cannot see. `plymouth-set-default-theme` with no arguments prints the real
-# answer and needs no sudo.
+# Is our Plymouth theme the one in use? Not `omarchy plymouth current`: that one
+# identifies a theme by comparing logo.png inside Omarchy's OWN theme folder,
+# and ours is a separate theme that it cannot see. `plymouth-set-default-theme`
+# with no arguments prints the real answer and needs no sudo.
 boot_applied() {
   local current
   current=$(plymouth-set-default-theme 2>/dev/null) ||
@@ -85,88 +76,10 @@ boot_applied() {
   [[ $current == "$PLYMOUTH_THEME" ]]
 }
 
-# Switched on in the settings AND in effect right now. This is what the widget
-# and `status` ask, so it is what decides the ✓.
-#
-# The tick is supposed to mean "this is happening now", and for `wallpaper` it
-# used to mean "configured". Observed after a round trip to another theme and
-# back: `✓ wallpaper` printed with ZERO rain surfaces on screen, because
-# `omarchy theme set` rotates to the theme's next background and the rotation
-# had landed on a still. Being on the live background is part of the piece being
-# on, so it is part of the question.
-#
-# `boot` asks the system instead of the theme: the Plymouth splash belongs to
-# the machine and stays put whichever theme you pick.
-is_active() {
-  [[ $(read_setting "$1") == "true" ]] || return 1
-  [[ $1 == "boot" ]] || pack_in_effect || return 1
-  case "$1" in
-  boot) boot_applied ;;
-  wallpaper) on_live_background && plugin_enabled "$PLUGIN_ID" ;;
-  screensaver) plugin_enabled "$PLUGIN_ID" && ! screensaver_flag_set ;;
-  lock) lock_clone_enabled ;;
-  widget) plugin_enabled "$WIDGET_ID" ;;
-  esac
-}
-
-active_of() {
-  is_active "$1" && echo true || echo false
-}
-
-read_setting() {
-  local piece="$1"
-  [[ -f $CONFIG ]] || { echo "true"; return; }
-  # `// true` is wrong here: jq treats false as absent, so `boot: false` would
-  # come back as true. Ask for the key, not for its value.
-  jq -r --arg k "$piece" 'if has($k) then .[$k] else true end | tostring' "$CONFIG" 2>/dev/null || echo "true"
-}
-
-write_setting() {
-  write_key "$1" --argjson "$2"
-}
-
-# `previousTheme` is a string, not a switch. Same file: it is the pack's own,
-# and it is the only place that survives both a theme change and an uninstall
-# that has not happened yet.
-write_string() {
-  write_key "$1" --arg "$2"
-}
-
-write_key() {
-  local key="$1" kind="$2" value="$3" tmp
-  mkdir -p "$(dirname "$CONFIG")"
-  [[ -f $CONFIG ]] || echo '{}' >"$CONFIG"
-  tmp=$(mktemp "$CONFIG.XXXXXX")
-  jq --arg k "$key" "$kind" v "$value" '.[$k] = $v' "$CONFIG" >"$tmp" 2>/dev/null ||
-    { rm -f "$tmp"; fail "could not write $CONFIG"; }
-  mv "$tmp" "$CONFIG"
-}
-
-# `omarchy plugin clone` decides the lock clone's id: <username>.lock. Discover
-# it rather than assume it, because on another machine the username differs.
-# Whether a folder is ours is lock_is_ours in lib/pack.sh: the one rule shared
-# with uninstall.sh and derive-lock.py.
-lock_clone_id() {
-  local dir
-  for dir in "$PLUGINS_DIR"/*.lock; do
-    lock_is_ours "$dir" || continue
-    jq -r '.id' "$dir/manifest.json"
-    return 0
-  done
-  return 1
-}
-
-# The pack's only footprint outside $HOME. `omarchy plymouth reset` puts
-# Omarchy's theme back but leaves ours sitting in /usr/share/plymouth/themes, so
-# off has to take it back too -- someone who never runs uninstall.sh would carry
-# it forever otherwise (Rule 5: off must mean gone).
-#
-# Always AFTER the reset, never before: pulling the directory out from under a
-# theme that is still the default is how a machine boots to a black screen.
-remove_plymouth_theme() {
-  local dir="/usr/share/plymouth/themes/$PLYMOUTH_THEME"
-  [[ -d $dir ]] || return 0
-  sudo rm -rf "$dir"
+# Omarchy's own still splash carries this theme when its logo is the theme's
+# unlock.png. That is how `omarchy plymouth current` knows a theme.
+omarchy_boot_is_ours() {
+  [[ $(omarchy-plymouth-current 2>/dev/null) == "$SLUG" ]]
 }
 
 # A lock is ours AND actually in charge. Merely having the clone on disk is not
@@ -184,13 +97,8 @@ screensaver_flag_set() {
   [[ -f "$HOME/.local/state/omarchy/toggles/screensaver-off" ]]
 }
 
-# The one reason that Repair cannot fix: the user switched Omarchy's screensaver
-# off, and Repair must not overrule that. The widget shows these words under the
-# switch, and the switch turns it back on. Empty when it does not apply.
-screensaver_note() {
-  if [[ $(read_setting screensaver) == "true" ]] && pack_in_effect && screensaver_flag_set; then
-    echo "On, but Omarchy's screensaver is off. Switch it on here."
-  fi
+on_live_background() {
+  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) == *-live-* ]]
 }
 
 nudge_shell() {
@@ -219,13 +127,6 @@ installed_pairs() {
   for f in $(jq -r '.plugin.files[]' "$PROVIDER"); do
     echo "$theme/$PLUGIN_SRC/$f|$PLUGINS_DIR/$PLUGIN_ID/$f"
   done
-  # The widget is deliberately ABSENT from this list, unlike .plugin.files[]
-  # above. The rain plugin's sources still live in the theme directory, so a
-  # `git pull` on the theme is exactly the event this comparison is for. The
-  # widget's do not: it is fetched from its own repo into the share dir's
-  # widget-src, so there is nothing under the theme directory to compare it
-  # against. install.sh refreshes that clone on every run, including the --sync
-  # this function ends up calling.
   echo "$theme/bin/$CLI|$SHARE_DIR/bin/$CLI"
   echo "$theme/lib/derive-lock.py|$SHARE_DIR/lib/derive-lock.py"
   echo "$theme/lib/derive-plymouth.py|$SHARE_DIR/lib/derive-plymouth.py"
@@ -233,8 +134,8 @@ installed_pairs() {
   echo "$theme/lib/provider.py|$SHARE_DIR/lib/provider.py"
   echo "$theme/lib/pack.sh|$SHARE_DIR/lib/pack.sh"
   echo "$theme/uninstall.sh|$SHARE_DIR/uninstall.sh"
-  # The hooks are deliberately ABSENT too: install.sh generates their wrappers
-  # on every run (including the --sync this function ends up calling), so there
+  # The hooks are deliberately ABSENT: install.sh generates their wrappers on
+  # every run (including the --sync this function ends up calling), so there
   # is no theme source to compare and nothing to go stale.
   echo "$theme/provider.json|$SHARE_DIR/provider.json"
 }
@@ -290,9 +191,6 @@ sync_files() {
 # `omarchy theme update` is not used: it pulls every git theme you have, not
 # only this one.
 
-UPDATE_CACHE="$HOME/.cache/$CLI/update.json"
-UPDATE_MAX_AGE=21600 # six hours: an open panel must not ask GitHub every time
-
 # The version of the theme folder. doctor syncs the pack to it on the next
 # `omarchy theme set`, so this is the version you run.
 pack_version() {
@@ -301,50 +199,22 @@ pack_version() {
   jq -r '.version // ""' "$dir/manifest.json" 2>/dev/null || true
 }
 
-update_document() { # <current> <latest> <available>
-  jq -nc --argjson schema 1 --arg current "$1" --arg latest "$2" --argjson available "$3" \
-    '{schema: $schema, current: $current, latest: $latest, available: $available}'
-}
-
 # Never fails. No network, a theme folder that is not a git clone, or a clone
 # with commits of its own all mean "no update to offer": a clone that has moved
 # on by itself is somebody's working copy, and pulling into it is their call.
 cmd_update_check() {
-  local json=0 dir head="" current latest="" available=false looked=0 now document
-  [[ ${1:-} == --json ]] && json=1
+  local dir current latest
   dir=$(theme_dir) || dir=""
   current=$(pack_version)
-  if [[ -n $dir && -e $dir/.git ]]; then
-    head=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || head=""
-  fi
-  now=$(date +%s)
-  # An answer about the same commit, younger than six hours, is still true.
-  if [[ -n $head ]] && jq -e --arg head "$head" --argjson now "$now" --argjson max "$UPDATE_MAX_AGE" \
-    '.head == $head and ($now - .checked) < $max' "$UPDATE_CACHE" >/dev/null 2>&1; then
-    document=$(jq -c '{schema, current, latest, available}' "$UPDATE_CACHE")
-    looked=1
-  elif [[ -n $head ]] &&
-    timeout 15 git -C "$dir" fetch --quiet https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master 2>/dev/null; then
-    if ! git -C "$dir" merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null &&
-      git -C "$dir" merge-base --is-ancestor HEAD FETCH_HEAD 2>/dev/null; then
-      available=true
-      latest=$(git -C "$dir" show FETCH_HEAD:manifest.json 2>/dev/null | jq -r '.version // ""') || latest=""
-    fi
-    document=$(update_document "$current" "$latest" "$available")
-    mkdir -p "${UPDATE_CACHE%/*}"
-    jq -c --arg head "$head" --argjson checked "$now" '. + {head: $head, checked: $checked}' \
-      <<<"$document" >"$UPDATE_CACHE.tmp" && mv "$UPDATE_CACHE.tmp" "$UPDATE_CACHE"
-    looked=1
-  else
-    document=$(update_document "$current" "" false)
-  fi
-
-  if ((json)); then
-    echo "$document"
-  elif ((!looked)); then
+  if [[ -z $dir || ! -e $dir/.git ]] ||
+    ! timeout 15 git -C "$dir" fetch --quiet https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master 2>/dev/null; then
     echo "$DISPLAY_NAME ${current:-?}: could not check for updates (no network, or the theme folder is not a git clone)"
-  elif [[ $(jq -r .available <<<"$document") == true ]]; then
-    echo "$DISPLAY_NAME $(jq -r .latest <<<"$document") is out, and you have ${current:-an older version}. Update with: $SELF update"
+    return 0
+  fi
+  if ! git -C "$dir" merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null &&
+    git -C "$dir" merge-base --is-ancestor HEAD FETCH_HEAD 2>/dev/null; then
+    latest=$(git -C "$dir" show FETCH_HEAD:manifest.json 2>/dev/null | jq -r '.version // ""') || latest=""
+    echo "$DISPLAY_NAME ${latest:-a newer version} is out, and you have ${current:-an older version}. Update with: $SELF update"
   else
     echo "$DISPLAY_NAME ${current:-?} is the latest version"
   fi
@@ -352,9 +222,9 @@ cmd_update_check() {
 
 cmd_update() {
   case "${1:-}" in
-  --check) shift; cmd_update_check "$@"; return ;;
+  --check) cmd_update_check; return ;;
   "") ;;
-  *) fail "unknown option: $1 (use: update, or update --check [--json])" ;;
+  *) fail "unknown option: $1 (use: update, or update --check)" ;;
   esac
   local dir
   dir=$(theme_dir) || dir=""
@@ -363,132 +233,48 @@ cmd_update() {
   echo "Updating $DISPLAY_NAME in $dir"
   git -C "$dir" pull --ff-only https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master ||
     fail "the pull stopped. If you changed files in $dir, commit or discard them, then run this again."
-  rm -f "$UPDATE_CACHE"
   # The pulled theme's own CLI runs doctor: a new doctor applies a new layout,
   # and nothing overwrites this script while bash is still reading it.
   exec "$dir/bin/$CLI" doctor
 }
 
-# --- pieces -----------------------------------------------------------------
+# --- one restart ------------------------------------------------------------
+#
+# Two things need a shell restart, and a rescan fixes neither:
+#
+# - A swap of the lock plugin leaves BOTH locks loaded. Quickshell then hands
+#   the `lock` IPC target to one of them and refuses the other ("another
+#   handler is registered for target lock"). Which one wins is not ours to
+#   choose: when Omarchy's won, the machine locked to its blurred wallpaper
+#   while every check of the pack passed.
+# - A hot reload of plugin QML can leave two instances alive, the old one still
+#   answering IPC.
+#
+# A restart blanks the bar and the background for a moment. Each one used to
+# come with its own step, so an install flickered several times. Now a command
+# compares pack_fingerprint (lib/pack.sh) before and after its work, and
+# restarts once at the end, and only if the shell has something to unload.
+# install.sh sets OMARCHY_MATRIX_RESTART=1 when it replaced the live plugin
+# before this command started.
+#
+# A rescan still in flight when the shell goes down segfaults quickshell
+# (quickshell-mirror/quickshell#972). restart_shell lets the scan settle first.
 
-# The plugin is needed if either of its two layers is on.
-sync_plugin() {
-  local wanted="false"
-  [[ $(read_setting wallpaper) == "true" || $(read_setting screensaver) == "true" ]] && wanted="true"
+FINGERPRINT=""
 
-  if ! plugin_known "$PLUGIN_ID"; then
-    omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
-    sleep 0.3
+begin_changes() {
+  FINGERPRINT=$(pack_fingerprint)
+}
+
+finish_changes() {
+  if [[ $(pack_fingerprint) == "$FINGERPRINT" && ${OMARCHY_MATRIX_RESTART:-0} != 1 ]]; then
+    return 0
   fi
-  plugin_known "$PLUGIN_ID" || {
-    echo "$SELF: the $PLUGIN_ID plugin is not installed" >&2
-    # NOT `omarchy plugin add <repo-url>`: that would install the whole repo as
-    # the plugin, bypassing the CLI, the hooks and the menu. install.sh copies in
-    # the five files the plugin actually needs. It is the only supported path.
-    echo "  install it with: $(omarchy-theme-dir "$SLUG" 2>/dev/null || echo "$HOME/.config/omarchy/themes/$SLUG")/install.sh" >&2
+  restart_shell || {
+    echo "$SELF: the shell did not restart. Run 'omarchy restart shell' before you lock the screen." >&2
     return 1
   }
-
-  if [[ $wanted == "true" ]]; then
-    plugin_enabled "$PLUGIN_ID" || { omarchy-plugin-enable "$PLUGIN_ID" >/dev/null; forget_plugin_list; }
-  else
-    ! plugin_enabled "$PLUGIN_ID" || { omarchy-plugin-disable "$PLUGIN_ID" >/dev/null; forget_plugin_list; }
-  fi
-}
-
-# The desktop rain is picked like any other background, in Style > Background.
-# offer_live_background (lib/pack.sh) puts it first in Omarchy's list, so a
-# theme set starts on it. The pack never forces it afterwards: the background
-# is Omarchy's choice and the user's.
-on_live_background() {
-  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) == *-live-* ]]
-}
-
-select_live_background() {
-  [[ -e $LIVE_LINK ]] || return 0
-  on_live_background || omarchy-theme-bg-set "$LIVE_LINK" >/dev/null
-}
-
-apply_wallpaper() {
-  if [[ $(read_setting wallpaper) == "true" ]]; then
-    select_live_background
-  elif on_live_background; then
-    omarchy-theme-bg-next >/dev/null
-  fi
-  sync_plugin && nudge_shell
-}
-
-# The rain covers Omarchy's own screensaver, and Omarchy decides when that one
-# runs. So the screensaver-off flag is the user's switch, not the pack's:
-# doctor and the hooks never touch it.
-#
-# An explicit `screensaver on` is the one exception. It asks for a screensaver,
-# and with the flag set there is none to cover, so it clears the flag.
-apply_screensaver() {
-  if [[ $(read_setting screensaver) == "true" ]] && screensaver_flag_set; then
-    omarchy-toggle screensaver-off off
-    echo "Omarchy's screensaver was off; it is on again, with the rain over it"
-  fi
-  sync_plugin && nudge_shell
-}
-
-# Swapping the lock plugin has a window -- a second or two -- in which neither
-# handler answers. The journal shows why: while both are momentarily loaded,
-# Quickshell rejects one with "another handler is registered for target lock",
-# and until the survivor finishes registering, `omarchy-shell lock status` says
-# "Target not found.".
-#
-# Nothing has ever locked inside that window here. But Rule 4 is "never leave
-# the machine unable to lock", and "it self-heals in about a second" is not the
-# same statement. So wait for the target to come back, and if it does not, say
-# what to do about it rather than returning success.
-# Which plugins currently provide a lock. Compared before and after a swap:
-# when this set changes, two lock plugins were briefly loaded at once and the
-# shell has to be restarted. See restart_shell_for_lock.
-enabled_locks() {
-  forget_plugin_list
-  plugin_list |
-    jq -r '[.[] | select(.enabled and (.id | endswith(".lock"))) | .id] | sort | join(",")'
-}
-
-# A plugin rescan that is still in flight when the shell is told to go down
-# SEGFAULTS quickshell. The scan finishes mid-teardown, builds the plugin
-# services, and their IpcHandler asks the engine generation for the IPC registry
-# that the teardown has already destroyed:
-#
-#   __dynamic_cast (src_type=EngineGenerationExt, dst_type=IpcHandlerRegistry)
-#   IpcHandler::updateRegistration   ipchandler.cpp:318
-#   IpcHandler::onPostReload         ipchandler.cpp:278
-#   QQmlObjectCreator::finalize      <- shell.qml:300, comp.createObject()
-#   Process::onFinished              <- the plugin scanner exiting
-#
-# Read out of a core dump on 2026-08-30. It is quickshell's bug, open upstream
-# and not fixable from here -- quickshell-mirror/quickshell#972, same two lines.
-# Ours is the workload that walks into it: `suspend` disables two plugins,
-# removes the lock clone, prunes its backup and restarts the shell, all inside
-# one second. Fifteen coredumps in three days, every one of them a `theme set`
-# away from matrix. The settle itself lives in lib/pack.sh, shared with
-# uninstall.sh, which removes the same folders.
-
-# Swapping which plugin owns the lock leaves BOTH loaded in the running shell.
-# Quickshell then hands the `lock` IPC target to one of them and refuses the
-# other:
-#
-#   QML IpcHandler ... Handler was registered but will not be used because
-#   another handler is registered for target lock
-#
-# Which one wins is not ours to choose, and here it alternated from run to run.
-# When Omarchy's won, the machine locked to Omarchy's blurred wallpaper -- while
-# `plugin list` reported cyberdyne.lock enabled, `lock status` answered, and the
-# patched QML sat on disk exactly right. Every check the pack had passed. Only a
-# screenshot of `omarchy-shell lock preview` showed the truth.
-#
-# `rescanPlugins` does not unload the loser; a restart does. This is the trap
-# already written down in CONTRIBUTING.md, reaching the one piece where being wrong is
-# invisible until you lock the screen.
-restart_shell_for_lock() {
-  echo "  restarting the shell so only one lock plugin is loaded"
-  restart_shell || return 1
+  wait_for_lock
 }
 
 # Waits for a STEADY answer, not for the first one. Measured here: `lock off`
@@ -510,9 +296,39 @@ wait_for_lock() {
     sleep 0.15
     waited=$((waited + 1))
   done
-  echo "$SELF: the lock is not answering steadily after the swap." >&2
+  echo "$SELF: the lock is not answering steadily after the restart." >&2
   echo "  Run 'omarchy restart shell' before locking the screen." >&2
   return 1
+}
+
+# --- the pieces -------------------------------------------------------------
+
+# One plugin draws the rain on the desktop and over the screensaver. It decides
+# nothing: the background says whether the desktop rains, and Omarchy says when
+# its screensaver opens.
+sync_plugin() {
+  if ! plugin_known "$PLUGIN_ID"; then
+    omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+    sleep 0.3
+    forget_plugin_list
+  fi
+  plugin_known "$PLUGIN_ID" || {
+    echo "$SELF: the $PLUGIN_ID plugin is not installed" >&2
+    # NOT `omarchy plugin add <repo-url>`: that would install the whole repo as
+    # the plugin, and skip the CLI and the hooks. install.sh copies in the few
+    # files the plugin needs. It is the only supported path.
+    echo "  install it with: $(theme_dir || echo "$HOME/.config/omarchy/themes/$SLUG")/install.sh" >&2
+    return 1
+  }
+  plugin_enabled "$PLUGIN_ID" || { omarchy-plugin-enable "$PLUGIN_ID" >/dev/null; forget_plugin_list; }
+}
+
+# The rain behind the password field. A WlSessionLock is exclusive, so this is
+# the one piece that stands in for a plugin of Omarchy's. The deriver resolves
+# provider.json on its own, and could find a different one than this CLI did (a
+# working copy beside an install). Hand it ours.
+apply_lock() {
+  OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-lock.py" >/dev/null
 }
 
 # Handing Omarchy's lock back ALWAYS goes through `plugin remove`, which is what
@@ -523,109 +339,56 @@ remove_lock_clone() {
   local id
   id=$(lock_clone_id) || return 0
   remove_plugin "$id"
+  forget_plugin_list
   prune_backups
 }
 
-apply_lock() {
-  local before after
-  before=$(enabled_locks)
-
-  if [[ $(read_setting lock) == "true" ]]; then
-    # The deriver resolves provider.json on its own, and could find a different
-    # one than this CLI did (a working copy beside an install). Hand it ours.
-    OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-lock.py" || return 1
-  else
-    if lock_clone_id >/dev/null; then
-      remove_lock_clone
-      echo "Handed the lock back to Omarchy"
-    else
-      return 0 # nothing was swapped, nothing to wait for
-    fi
-  fi
-
-  # Only when the set actually changed. Re-deriving over a clone that was
-  # already the enabled one -- what the theme-set hook does on every `omarchy
-  # theme set <slug>` -- loads no second plugin and needs no restart.
-  after=$(enabled_locks)
-  [[ $before == "$after" ]] || restart_shell_for_lock
-  wait_for_lock
+# Another theme stands everything down: nothing rains, and nothing of the pack
+# stays enabled. Nothing of Omarchy's stays disabled either.
+stand_down() {
+  ! plugin_enabled "$PLUGIN_ID" || omarchy-plugin-disable "$PLUGIN_ID" >/dev/null
+  forget_plugin_list
+  remove_lock_clone
 }
 
-# The bar icon and its panel: the pack's own switchboard, one click away.
+# The screen before login. Needs sudo and rebuilds the initramfs, so it never
+# happens on its own: only on a first install that took the red pill, from
+# Omarchy's Style > Unlock (lib/derive-menu.py), or by hand.
 #
-# For a plugin of kind `bar-widget`, "enabled" means "present in bar.layout" --
-# PluginRegistry.setEnabled inserts the entry there and removes it again
-# (PluginRegistry.qml:498-520). That is why the widget is a plugin of its own
-# and not another kind on the rain: turning both rain layers off disables that
-# plugin, and folding the two together would take the icon off the bar with them.
-apply_widget() {
-  if [[ $(read_setting widget) == "true" ]]; then
-    if ! plugin_known "$WIDGET_ID"; then
-      omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
-      sleep 0.3
-    fi
-    plugin_known "$WIDGET_ID" || {
-      echo "$SELF: the $WIDGET_ID plugin is not installed" >&2
-      return 1
-    }
-    plugin_enabled "$WIDGET_ID" ||
-      { omarchy-plugin-enable "$WIDGET_ID" --section "$WIDGET_SECTION" >/dev/null; forget_plugin_list; }
-  else
-    ! plugin_enabled "$WIDGET_ID" || { omarchy-plugin-disable "$WIDGET_ID" >/dev/null; forget_plugin_list; }
-  fi
-}
-
-apply_boot() {
-  # The screen before login. Needs sudo and rebuilds the initramfs, so it never
-  # happens on its own: only when you ask for it, or pick this theme's card in
-  # Omarchy's Style > Unlock (lib/derive-menu.py).
-  #
-  # derive-plymouth.py adds the animation as a theme of its own beside
-  # Omarchy's, and makes it the default: one rebuild, like any other card in
-  # Unlock. Omarchy's still splash is not installed underneath. That took a
-  # second rebuild, only so that Unlock would mark this card. Going back is
-  # `omarchy plymouth reset`.
-  if [[ $(read_setting boot) == "true" ]]; then
-    derive_boot || return 1
-  else
-    # Only reset when a Matrix splash is the one installed: the animation, or
-    # Omarchy's still one. Resetting unconditionally rebuilt the initramfs for
-    # nothing, and dragged somebody who had picked `spinner` back to Omarchy's,
-    # overriding a choice the pack never made. The directory goes either way.
-    if boot_applied || omarchy_boot_is_ours; then
-      omarchy-plymouth-reset || return 1
-    fi
-    remove_plymouth_theme
-  fi
-}
-
-# The animation, derived from this machine's omarchy.script. post-update runs
-# this too, after every `omarchy update`.
+# derive-plymouth.py adds the animation as a theme of its own beside Omarchy's,
+# and makes it the default: one rebuild, like any other card in Unlock.
+# Omarchy's still splash is not installed underneath. That took a second
+# rebuild, only so that Unlock would mark this card.
 derive_boot() {
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-plymouth.py"
 }
 
-# Omarchy's own still splash carries this theme when its logo is the theme's
-# unlock.png. That is how `omarchy plymouth current` knows a theme.
-omarchy_boot_is_ours() {
-  [[ $(omarchy-plymouth-current 2>/dev/null) == "$SLUG" ]]
+# Only reset when a Matrix splash is the one installed: the animation, or
+# Omarchy's still one. Resetting unconditionally rebuilt the initramfs for
+# nothing, and dragged somebody who had picked `spinner` back to Omarchy's,
+# overriding a choice the pack never made. The directory goes either way.
+boot_off() {
+  if boot_applied || omarchy_boot_is_ours; then
+    omarchy-plymouth-reset || return 1
+  fi
+  remove_plymouth_theme
+}
+
+# The pack's only footprint outside $HOME. `omarchy plymouth reset` puts
+# Omarchy's theme back but leaves ours in /usr/share/plymouth/themes, so off
+# takes it back too. Always AFTER the reset, never before: pulling the folder
+# out from under a theme that is still the default boots to a black screen.
+remove_plymouth_theme() {
+  local dir="/usr/share/plymouth/themes/$PLYMOUTH_THEME"
+  [[ -d $dir ]] || return 0
+  sudo rm -rf "$dir"
 }
 
 # Style > Unlock: the card of this theme boots animated (lib/derive-menu.py).
-# It belongs to `boot`, which follows the system and not the theme, so it stays
-# while another theme is current.
+# It belongs to the boot splash, which follows the system and not the theme, so
+# it stays while another theme is current.
 apply_unlock_menu() {
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-menu.py"
-}
-
-apply_piece() {
-  case "$1" in
-  wallpaper) apply_wallpaper ;;
-  screensaver) apply_screensaver ;;
-  lock) apply_lock ;;
-  boot) apply_boot ;;
-  widget) apply_widget ;;
-  esac
 }
 
 # --- hooks ------------------------------------------------------------------
@@ -633,8 +396,8 @@ apply_piece() {
 # four-line wrapper calling back here, so the logic lives in one place and the
 # generated file carries no provider names at all.
 
-# Picking our theme returns the pack; picking any other stands it down, keeping
-# the settings. Also the net that catches `omarchy refresh shell`.
+# Picking our theme brings the pack up; picking any other stands it down. Also
+# the net that catches `omarchy refresh shell`.
 cmd_hook_theme_set() {
   if [[ ${1:-} == "$SLUG" ]]; then
     cmd_doctor >/dev/null 2>&1 || true
@@ -643,22 +406,18 @@ cmd_hook_theme_set() {
   fi
 }
 
-# After `omarchy update`: the lock and the boot splash are derived from
+# After `omarchy update`: the lock, the boot splash and the Unlock row come from
 # Omarchy's sources, so derive them again from the fresh ones.
 cmd_hook_post_update() {
-  # doctor's staleness check refreshes the pack's copies first, and re-asserts
-  # the plugin AND re-derives the lock when that piece is on -- so there is no
-  # second `lock on` here: against the same updated source the same patch fails
-  # the same way, and the only thing a retry added was the work.
   cmd_doctor >/dev/null 2>&1 || true
 
   # The boot splash needs sudo, and there is a terminal here.
-  if is_active boot; then
-    derive_boot || echo "$DISPLAY_NAME: could not re-derive the boot splash" >&2
+  if boot_applied; then
+    derive_boot || echo "$DISPLAY_NAME: could not derive the boot splash again" >&2
   fi
 
-  # doctor above derived Style > Unlock again. If Omarchy's row changed shape,
-  # the deriver handed the row back to Omarchy. Say so: nobody reads doctor here.
+  # doctor derived Style > Unlock again. If Omarchy's row changed shape, the
+  # deriver handed the row back to Omarchy. Say so: nobody reads doctor here.
   if ! apply_unlock_menu >/dev/null 2>&1; then
     omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
       "Omarchy's Unlock menu has changed. Its Matrix card gives the still splash for now." \
@@ -666,157 +425,106 @@ cmd_hook_post_update() {
   fi
 
   # doctor's failure mode, when nobody watches stdout: the patch no longer fits
-  # the updated LockView.qml. Say so -- but only when the piece is wanted and
-  # the pack is in effect.
-  local state
-  state=$(cmd_status --json) || return 0
-  [[ $(jq -r '.active and .settings.lock' <<<"$state") == "true" ]] || return 0
-  [[ $(jq -r '.pieces.lock' <<<"$state") == "true" ]] && return 0
-
-  omarchy-notification-send -g 󱄄 "$DISPLAY_NAME" \
-    "Omarchy's lock has changed and the rain patch no longer fits. Native lock for now." \
-    2>/dev/null || true
+  # the updated LockView.qml, and Omarchy's own lock stays in charge.
+  forget_plugin_list
+  if pack_in_effect && ! lock_clone_enabled; then
+    omarchy-notification-send -g 󱄄 "$DISPLAY_NAME" \
+      "Omarchy's lock has changed and the rain patch no longer fits. Native lock for now." \
+      2>/dev/null || true
+  fi
 }
 
 # --- commands ---------------------------------------------------------------
 
-cmd_status() {
-  local format="text" query="" piece
-  while (($# > 0)); do
-    case "$1" in
-    --json) format="json"; shift ;;
-    --is) query="${2:-}"; shift 2 ;;
-    *) fail "unknown option: $1" ;;
-    esac
-  done
-
-  if [[ -n $query ]]; then
-    [[ " ${PIECES[*]} " == *" $query "* ]] || fail "unknown piece: $query"
-    # What answers the menu's ✓: on AND in effect, not merely on.
-    is_active "$query"
-    return
-  fi
-
-  if [[ $format == "json" ]]; then
-    # `settings` is what you asked for, `active` is what is happening. They are
-    # not the same question -- see is_active -- and the widget draws its ticks
-    # from `active` so that one definition serves both it and the text below.
-    # `schema` versions this document: readers take 1 and reject anything else.
-    # `notes` holds the reason for a piece that is on but not in effect, when
-    # the widget's own generic reason would be wrong (see screensaver_note).
-    jq -n \
-      --argjson schema 1 \
-      --argjson w "$(read_setting wallpaper)" --argjson s "$(read_setting screensaver)" \
-      --argjson l "$(read_setting lock)" --argjson b "$(read_setting boot)" \
-      --argjson aw "$(active_of wallpaper)" --argjson as "$(active_of screensaver)" \
-      --argjson al "$(active_of lock)" --argjson ab "$(active_of boot)" \
-      --argjson g "$(read_setting widget)" --argjson ag "$(active_of widget)" \
-      --argjson effect "$(pack_in_effect && echo true || echo false)" \
-      --arg theme "$(current_theme)" --arg name "$DISPLAY_NAME" --arg slug "$SLUG" \
-      --arg version "$(pack_version)" --arg ns "$(screensaver_note)" \
-      '{schema: $schema, name: $name, version: $version, slug: $slug, theme: $theme, active: $effect,
-        settings: {wallpaper: $w, screensaver: $s, lock: $l, boot: $b, widget: $g},
-        pieces: {wallpaper: $aw, screensaver: $as, lock: $al, boot: $ab, widget: $ag},
-        notes: (if $ns == "" then {} else {screensaver: $ns} end)}'
-    return
-  fi
-
-  if ! pack_in_effect; then
-    printf '  the pack is stood down: the current theme is \033[1m%s\033[0m, not %s\n' \
-      "$(current_theme)" "$SLUG"
-    printf '  bring it back with: omarchy theme set %s\n' "$SLUG"
-    # Stood down should mean nothing enabled. Older versions of doctor got here
-    # with the pieces still up; say so instead of looking clean.
-    if plugin_enabled "$PLUGIN_ID" || plugin_enabled "$WIDGET_ID" || lock_clone_id >/dev/null 2>&1; then
-      printf '  \033[2mbut pieces of it are still up -- stand them down with: %s doctor\033[0m\n' "$SELF"
-    fi
-    echo
-  fi
-
-  for piece in "${PIECES[@]}"; do
-    if is_active "$piece"; then
-      printf '  \033[32m✓\033[0m %-12s\n' "$piece"
-    elif [[ $(read_setting "$piece") != "true" ]]; then
-      printf '    %-12s\n' "$piece"
-    elif [[ $piece == "boot" ]]; then
-      printf '    %-12s \033[2mon, but not applied — run: %s boot on\033[0m\n' "$piece" "$SELF"
-    elif ! pack_in_effect; then
-      printf '    %-12s \033[2mon, but stood down with the theme\033[0m\n' "$piece"
-    elif [[ $piece == "screensaver" ]] && screensaver_flag_set; then
-      # Not a fault: the user switched Omarchy's screensaver off, and the rain
-      # only covers that one. doctor must not overrule the choice.
-      printf "    %-12s \033[2mon, but Omarchy's screensaver is off — run: %s screensaver on\033[0m\n" \
-        "$piece" "$SELF"
-    elif [[ $piece == "wallpaper" ]] && ! on_live_background; then
-      # The one case that is neither: the theme is ours, the piece is on, and the
-      # desktop is showing another background from the carousel. Asked
-      # explicitly, so that a piece held back by anything else still says so
-      # below rather than blaming the background.
-      printf '    %-12s \033[2mon, but the desktop is on another background — run: %s wallpaper on\033[0m\n' \
-        "$piece" "$SELF"
-    else
-      printf '    %-12s \033[2mon, but not in effect — run: %s doctor\033[0m\n' "$piece" "$SELF"
-    fi
-  done
-
-  # Only when something actually wants it. With both rain layers off the plugin
-  # is disabled on purpose, and telling the user to repair a machine that is
-  # doing exactly what they asked is how a warning stops being read.
-  if pack_in_effect && [[ $(read_setting wallpaper) == "true" || $(read_setting screensaver) == "true" ]] &&
-    ! plugin_enabled "$PLUGIN_ID"; then
-    printf '\n  the %s plugin is not active — fix it with: %s doctor\n' "$PLUGIN_ID" "$SELF"
+status_row() { # <on|off> <piece> <text>
+  if [[ $1 == on ]]; then
+    printf '  \033[32m✓\033[0m %-12s %s\n' "$2" "$3"
+  else
+    printf '    %-12s \033[2m%s\033[0m\n' "$2" "$3"
   fi
 }
 
+# A ✓ means "this is happening now", never "this is configured": each row asks
+# the machinery. After `omarchy refresh shell` wiped shell.json, a status that
+# read settings ticked a lock that Omarchy's own lock had replaced.
+cmd_status() {
+  local version
+  version=$(pack_version)
+  printf '  %s%s\n\n' "$DISPLAY_NAME" "${version:+ $version}"
+
+  if ! pack_in_effect; then
+    printf '  Stood down: the theme is %s. Back with Style › Theme › %s.\n' \
+      "$(current_theme)" "$DISPLAY_NAME"
+    # Stood down should mean nothing enabled. Say so instead of looking clean.
+    if plugin_enabled "$PLUGIN_ID" || lock_clone_id >/dev/null; then
+      printf '  \033[2mBut pieces of it are still up. Stand them down with: %s doctor\033[0m\n' "$SELF"
+    fi
+    echo
+  else
+    if ! plugin_enabled "$PLUGIN_ID"; then
+      status_row off desktop "the rain plugin is off. Repair: $SELF doctor"
+      status_row off screensaver "the rain plugin is off. Repair: $SELF doctor"
+    else
+      if on_live_background; then
+        status_row on desktop "rain behind your windows"
+      else
+        status_row off desktop "another background. For the rain: Style › Background"
+      fi
+      # Not a fault: the user switched Omarchy's screensaver off, and the rain
+      # only covers that one. doctor must not overrule the choice.
+      if screensaver_flag_set; then
+        status_row off screensaver "Omarchy's screensaver is off. On again: omarchy toggle screensaver"
+      else
+        status_row on screensaver "rain over Omarchy's screensaver"
+      fi
+    fi
+    if lock_clone_enabled; then
+      status_row on lock "rain behind the password field"
+    else
+      status_row off lock "Omarchy's own lock is in charge. Repair: $SELF doctor"
+    fi
+  fi
+
+  if boot_applied; then
+    status_row on boot "the lines from the film, before login"
+  else
+    status_row off boot "Omarchy's splash. For the Matrix one: Style › Unlock"
+  fi
+}
+
+# Asserts everything again. This is what to run after an `omarchy refresh
+# shell`, which rewrites shell.json and leaves the plugin off.
 cmd_doctor() {
-  # Asserts everything again. This is what to run after an
-  # `omarchy refresh shell`, which rewrites shell.json and leaves the plugin off.
   local failures=0 theme
-  echo "Checking the pack..."
+  begin_changes
+  pack_migrate
   sync_files
   # The rain's background belongs to the theme's own list, so it is offered
   # whichever theme is current. Omarchy shows it only under this theme.
   theme=$(theme_dir) || theme=""
   [[ -z $theme ]] || offer_live_background "$theme"
-  # Style > Unlock belongs to `boot`, which follows the system and not the
-  # theme, so it is derived again here whichever theme is current.
-  apply_unlock_menu || failures=1
-  # Under ANOTHER theme there is nothing to assert: the pack is stood down by
-  # design, and standing it up is exactly the bug this guards. install.sh ends
-  # in doctor, so any `git pull && ./install.sh` run while on somebody else's
-  # theme used to re-enable the plugin, the widget and the lock clone underneath
-  # it -- observed: suspended correctly at 14:52 when the theme changed, stood
-  # back up by a manual install that evening, raining under everforest.
-  #
-  # And if pieces are found UP while stood down -- a state only older versions
-  # of this command could produce -- doctor's job is to stand them down.
-  if ! pack_in_effect; then
-    if plugin_enabled "$PLUGIN_ID" || plugin_enabled "$WIDGET_ID" || lock_clone_id >/dev/null 2>&1; then
-      echo "  the theme is $(current_theme), but pieces of the pack are still up; standing them down"
-      cmd_suspend
-    else
-      echo "  stood down: the current theme is $(current_theme), not $SLUG"
-      echo "  nothing to repair; it all comes back with: omarchy theme set $SLUG"
-    fi
-    cmd_status
-    return 0
+  # Style > Unlock belongs to the boot splash, which follows the system and not
+  # the theme, so it is derived again whichever theme is current.
+  apply_unlock_menu >/dev/null || failures=1
+  if pack_in_effect; then
+    sync_plugin || failures=1
+    apply_lock || failures=1
+    nudge_shell
+  else
+    # Under ANOTHER theme there is nothing to put up, and putting it up is the
+    # bug this guards: install.sh ends in doctor, and a manual `git pull &&
+    # ./install.sh` once stood the pack up under everforest. A piece found up
+    # here, from an older version or a crash, goes down.
+    stand_down
   fi
-  release_screensaver_flag
-  sync_plugin || failures=1
-  apply_widget || failures=1
-  [[ $(read_setting lock) != "true" ]] || apply_lock || failures=1
-  nudge_shell
-  # `boot` is left out on purpose: it needs sudo and this runs from hooks.
+  finish_changes || failures=1
   cmd_status
   return $failures
 }
 
-# When the current theme stops being ours, the pack stands down without touching
-# the settings: coming back restores exactly what you had.
-#
-# The lock stands down by deleting the clone, not by disabling it: see
-# remove_lock_clone. `boot` is left alone, since the Plymouth splash belongs to
-# the system rather than to the theme.
+# When the current theme stops being ours, the pack stands down. The lock
+# stands down by deleting the clone, not by disabling it: see remove_lock_clone.
+# The boot splash stays, since it belongs to the system rather than to the theme.
 cmd_suspend() {
   # Remember what you left for. Omarchy overwrites current/theme.name before it
   # calls the theme-set hook, so this is the last moment anyone knows -- and
@@ -824,68 +532,52 @@ cmd_suspend() {
   # of on whichever stock theme happens to sort first.
   local leaving
   leaving=$(current_theme)
-  [[ -z $leaving || $leaving == "$SLUG" ]] || write_string previousTheme "$leaving"
-
-  ! plugin_enabled "$PLUGIN_ID" || omarchy-plugin-disable "$PLUGIN_ID" >/dev/null
-  forget_plugin_list
-  # The bar icon goes with the rest: a Matrix switch on the bar under somebody
-  # else's theme is the pack refusing to stand down (Rule 5).
-  ! plugin_enabled "$WIDGET_ID" || omarchy-plugin-disable "$WIDGET_ID" >/dev/null
-  forget_plugin_list
-  release_screensaver_flag
-  if lock_clone_id >/dev/null; then
-    remove_lock_clone
-    # Standing down runs from the theme-set hook, where nobody is watching the
-    # output -- which is exactly when being left without a lock, or left with
-    # the wrong one still painting, would go unnoticed.
-    restart_shell_for_lock
-    wait_for_lock
-  fi
+  [[ -z $leaving || $leaving == "$SLUG" ]] || remember_previous_theme "$leaving"
+  begin_changes
+  pack_migrate
+  stand_down
+  finish_changes
 }
 
-cmd_all() {
-  local value="$1" piece
-  for piece in wallpaper screensaver lock; do
-    write_setting "$piece" "$value"
-  done
-  # Under another theme the settings are the whole command: the pieces apply
-  # when the theme comes back (theme-set hook -> doctor). See cmd_doctor.
-  if pack_in_effect; then
-    # Wallpaper first, and actually APPLIED: writing the setting without this
-    # left `off` sitting on the live background's still frame, which reads
-    # exactly like rain that has frozen -- the state apply_wallpaper exists to
-    # leave.
-    apply_wallpaper
-    apply_screensaver
-    apply_lock
-  fi
-  cmd_status
+cmd_boot() {
+  case "${1:-}" in
+  on) derive_boot ;;
+  off) boot_off ;;
+  *) fail "use: $SELF boot on, or $SELF boot off" ;;
+  esac
+}
+
+# Up to 1.2.x each piece had a switch. Say where each choice lives now, rather
+# than "unknown command" to somebody who follows an older README.
+no_switches() {
+  cat >&2 <<EOF
+$SELF: the pieces have no switches any more. Omarchy's own menus decide:
+  desktop rain   Style › Background, the rain
+  boot splash    Style › Unlock, the $DISPLAY_NAME card
+The lock and the screensaver rain whenever the $DISPLAY_NAME theme is on.
+EOF
+  exit 1
 }
 
 usage() {
   cat <<USAGE
 Usage: $SELF <command>
 
-  on | off                            Turn the pack on or off (wallpaper,
-                                      screensaver and lock -- not boot, which
-                                      needs sudo, and not the widget, which is
-                                      how you reach these switches)
-  wallpaper|screensaver|lock|boot|widget on|off|toggle
-                                      One piece at a time
-  status [--is <piece>] [--json]      What is on
-  doctor                              Assert everything again
-  update [--check [--json]]           Pull the latest version of this theme,
-                                      then doctor. --check only looks
-  suspend                             Stand the pack down, keeping your settings
-  uninstall [--keep-theme]            Remove the pack (execs uninstall.sh)
+  status                      What the pack does right now
+  doctor                      Put everything back, for example after
+                              'omarchy refresh shell'
+  update [--check]            Pull the latest version of this theme, then
+                              doctor. --check only looks
+  boot on|off                 The Matrix boot splash, as Style › Unlock sets
+                              it. Needs sudo
+  uninstall [--keep-theme]    Remove the pack, and the theme unless
+                              --keep-theme
 
-Pieces:
-  wallpaper    Rain on the desktop (selects the live background)
-  screensaver  Omarchy's own screensaver, with the rain drawn over it
-  lock         Rain behind the password field when you lock
-  boot         The screen before login (Plymouth), also the Matrix card in
-               Omarchy's Style > Unlock. Needs sudo.
-  widget       The switchboard on the bar: these switches, one click away
+There is nothing to switch. While the $DISPLAY_NAME theme is on:
+  desktop       rains when the rain is the background (Style › Background)
+  screensaver   rains over Omarchy's screensaver, whenever Omarchy opens it
+  lock          rains behind the password field
+  boot          types the lines from the film, when Style › Unlock picks it
 USAGE
 }
 
@@ -893,11 +585,10 @@ command="${1:-status}"
 shift || true
 
 case "$command" in
-on) cmd_all true ;;
-off) cmd_all false ;;
-status) cmd_status "$@" ;;
+status) cmd_status ;;
 doctor) cmd_doctor ;;
 update) cmd_update "$@" ;;
+boot) cmd_boot "$@" ;;
 suspend) cmd_suspend ;;
 uninstall) exec "$ROOT/uninstall.sh" "$@" ;;
 hook)
@@ -910,25 +601,7 @@ hook)
   *) fail "unknown hook: $event" ;;
   esac
   ;;
-wallpaper | screensaver | lock | boot | widget)
-  action="${1:-toggle}"
-  case "$action" in
-  on) write_setting "$command" true ;;
-  off) write_setting "$command" false ;;
-  toggle) [[ $(read_setting "$command") == "true" ]] && write_setting "$command" false || write_setting "$command" true ;;
-  *) fail "unknown action: $action (use on, off or toggle)" ;;
-  esac
-  # The theme-bound pieces only APPLY while their theme is current. Under
-  # another one, writing the setting is the whole command -- the piece comes up
-  # with the theme -- and applying anyway is how a hand run once stood the pack
-  # up under somebody else's (see cmd_doctor). `boot` is the exception: the
-  # splash belongs to the system, whichever theme is on.
-  if [[ $command == "boot" ]] || pack_in_effect; then
-    apply_piece "$command"
-  else
-    echo "$SELF: noted -- $command applies when the $SLUG theme is current"
-  fi
-  ;;
+on | off | wallpaper | screensaver | lock | widget) no_switches ;;
 -h | --help | help) usage ;;
-*) usage; exit 1 ;;
+*) usage >&2; exit 1 ;;
 esac

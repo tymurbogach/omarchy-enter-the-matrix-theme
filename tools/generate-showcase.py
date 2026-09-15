@@ -73,10 +73,6 @@ SINGLES = [
     {"name": "lock", "shot": "lock.png", "crop": FULL,
      "title": "Lock",
      "line": "Omarchy's own lock, with the rain behind the password field."},
-    # Starts right of the bar's media title, which shows whatever is playing.
-    {"name": "widget", "shot": "widget.png", "crop": (0.70, 0.0, 1.0, 0.46),
-     "title": "Bar widget",
-     "line": "One icon, four switches. Each piece turns on and off alone."},
 ]
 # boot-granted.png and boot-progress.png come from the same burst
 # (capture-showcase.sh, scene dialog): pick the frame with ACCESS GRANTED in
@@ -339,7 +335,7 @@ def stack(shots, index, entry, seed):
 
 
 def poster(shots, seed):
-    """The first picture in the README: the desktop, and three pieces in front."""
+    """The first picture in the README: the desktop, and two pieces in front."""
     w, h = CANVAS_W, 1400
     canvas = backdrop((w, h), seed)
     draw = ImageDraw.Draw(canvas)
@@ -355,8 +351,6 @@ def poster(shots, seed):
     boot = card(cut(shots["boot-password.png"], SPLASH), 520, 420)
     place(canvas, boot, 620, 860, glow=0.16)
 
-    widget = card(cut(shots["widget.png"], SINGLES[3]["crop"]), 420, 460)
-    place(canvas, widget, w - widget.width - 70, 840, glow=0.18)
 
     title = font(96)
     tracked(draw, 130, 170, "ENTER THE", title, BRIGHT, 14)

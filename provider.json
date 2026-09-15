@@ -10,8 +10,8 @@
     "single line of bash changed.",
     "",
     "Installed to ~/.local/share/omarchy-matrix/provider.json so the CLI can",
-    "still read it while another theme is current -- `suspend` and `lock off`",
-    "run exactly then, and ~/.local/state/omarchy/current/theme points elsewhere."
+    "still read it while another theme is current -- `suspend` runs exactly",
+    "then, and ~/.local/state/omarchy/current/theme points elsewhere."
   ],
 
   "slug": "enter-the-matrix",
@@ -32,23 +32,6 @@
       "matrix.frag.qsb",
       "glyphs.png"
     ]
-  },
-
-  "widget": {
-    "id": "io.github.tymurbogach.enter-the-matrix.widget",
-    "//repo": [
-      "The widget lives in its own repo, because a plugin repo holds one",
-      "manifest at its root. install.sh fetches the commit that \"ref\" names",
-      "(a full SHA) and caches it. A cache at that commit needs no network.",
-      "MATRIX_WIDGET_SRC overrides this for local development against an",
-      "uncommitted checkout. Why a fetch and not a git submodule: see the trap",
-      "headed \"The widget comes from its own repo\" under \"Traps already paid",
-      "for\" in CONTRIBUTING.md."
-    ],
-    "repo": "https://github.com/tymurbogach/omarchy-matrix-widget",
-    "ref": "1684e3efe323b3541870f801d0c831b7bb6ee5b9",
-    "files": ["manifest.json", "Panel.qml"],
-    "section": "right"
   },
 
   "//rainFiles": [

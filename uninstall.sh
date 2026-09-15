@@ -34,16 +34,9 @@ fi
 
 THEME_DIR="$HOME/.config/omarchy/themes/$SLUG"
 
-# Read before anything is deleted: the theme step-off at the very bottom needs
-# it, and the settings file is removed long before then. The theme-set hook
-# records it every time you pick another theme, because Omarchy overwrites
-# current/theme.name before it calls that hook -- afterwards nobody knows.
-PREVIOUS_THEME=$(jq -r '.previousTheme // empty' "$CONFIG" 2>/dev/null || echo "")
-
 # The theme goes too, unless you say otherwise. It used to be kept -- it is a
 # perfectly good theme on its own -- but "uninstall" that leaves a directory
-# behind is not what anybody means by the word, and the widget button that
-# calls this is labelled Uninstall, not Disable.
+# behind is not what anybody means by the word.
 #
 # Only --keep-theme modifies the run. Anything else -- including --help -- must
 # never fall through into deleting things: `omarchy-matrix uninstall --help`
@@ -65,6 +58,16 @@ esac
 KEEP_THEME=0
 [[ ${1:-} != "--keep-theme" ]] || KEEP_THEME=1
 
+# An install older than 1.3 kept a switch per piece in a settings file, and the
+# screensaver flag that it set must go back first (lib/pack.sh).
+retire_settings
+
+# Read before anything is deleted: the theme step-off at the very bottom needs
+# it, and the share dir that holds it goes long before then. The theme-set hook
+# records it every time you pick another theme, because Omarchy overwrites
+# current/theme.name before it calls that hook -- afterwards nobody knows.
+PREVIOUS_THEME=$(cat "$PREVIOUS_THEME_FILE" 2>/dev/null || echo "")
+
 echo "· handing Omarchy's lock back"
 lock_removed=0
 for dir in "$PLUGINS_DIR"/*.lock; do
@@ -77,14 +80,10 @@ for dir in "$PLUGINS_DIR"/*.lock; do
   lock_removed=1
 done
 
-echo "· removing the rain plugin and the bar widget"
-for id in "$PLUGIN_ID" "$WIDGET_ID"; do
-  remove_plugin "$id"
-done
-
-# Up to 1.2.0 the pack switched Omarchy's screensaver off. If this install still
-# holds that flag, hand it back. A flag that the user set stays (lib/pack.sh).
-release_screensaver_flag
+echo "· removing the rain plugin"
+remove_plugin "$PLUGIN_ID"
+# An install older than 1.3 also had a bar widget.
+retire_widget
 
 # Style > Unlock goes back to Omarchy's own row (lib/derive-menu.py). An older
 # install has no such block, and no deriver to take it out.
@@ -137,7 +136,6 @@ echo "· removing hooks, the CLI and the share dir"
 rm -f "$HOOKS/theme-set.d/$SLUG" "$HOOKS/post-update.d/$SLUG"
 rm -f "$BIN_DIR/$CLI"
 clean_legacy_bins
-rm -f "$CONFIG"
 # Where install.sh keeps the CLI, its python, provider.json and this script.
 # Unlinking the running script is safe -- the open inode survives to the last
 # line -- but truncating it is not, so never rewrite it here.

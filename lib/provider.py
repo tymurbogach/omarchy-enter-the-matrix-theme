@@ -10,7 +10,7 @@ Resolution order, and why:
   $OMARCHY_MATRIX_PROVIDER          an explicit override, and what the tests use
   ~/.local/share/omarchy-matrix/    where install.sh puts it -- readable even
                                     while another theme is current, which is
-                                    exactly when `suspend` and `lock off` run
+                                    exactly when `suspend` runs
   next to this script                a working copy, with nothing installed yet
 """
 

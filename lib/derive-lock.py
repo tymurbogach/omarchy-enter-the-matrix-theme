@@ -15,6 +15,7 @@ If the block to replace does not appear exactly once, this aborts and leaves the
 native lock alone. A half-patched lock is a machine that will not unlock.
 """
 
+import filecmp
 import json
 import os
 import re
@@ -207,11 +208,39 @@ def stage_clone(target, plugin_id, rain):
             die(f"the derived lock does not pass Omarchy's validation.\n"
                 f"  Your current lock at {target} is untouched.")
 
+    # Every doctor derives again, and the result is usually what is live
+    # already. A swap then only reloads the lock plugin in the running shell,
+    # so an identical result stays in staging and goes.
+    if same_tree(staging, target):
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+
     # Two renames rather than `rm -rf target; mv staging target`: the delete
     # would be one watcher event per file, which is the burst being avoided.
     os.replace(target, retired)
     os.replace(staging, target)
     shutil.rmtree(retired, ignore_errors=True)
+    return True
+
+
+def same_tree(a, b):
+    """Whether two folders hold the same files, byte for byte."""
+    names = sorted(p.relative_to(a) for p in a.rglob("*"))
+    if names != sorted(p.relative_to(b) for p in b.rglob("*")):
+        return False
+    return all(filecmp.cmp(a / name, b / name, shallow=False)
+               for name in names if (a / name).is_file())
+
+
+def enabled(plugin_id):
+    """Whether the running shell has the plugin enabled. No answer means no."""
+    try:
+        listed = subprocess.run(["omarchy-plugin-list", "--json"], check=True,
+                                capture_output=True, text=True).stdout
+        return any(p.get("id") == plugin_id and p.get("enabled")
+                   for p in json.loads(listed))
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return False
 
 
 def main():
@@ -242,7 +271,7 @@ def main():
             f"deriving over it would patch your own lock.")
 
     try:
-        stage_clone(target, plugin_id, rain)
+        changed = stage_clone(target, plugin_id, rain)
     except SystemExit:
         # A FIRST derive that cannot patch hands the lock straight back. Left in
         # place, the raw clone stays enabled with Omarchy's own disabled by the
@@ -257,6 +286,11 @@ def main():
                                check=False, capture_output=True)
         raise
 
+    # The same lock, already in charge: nothing to tell the shell. After
+    # `omarchy refresh shell` the clone is on disk but not enabled, so the
+    # enable below still runs then.
+    if not created and not changed and enabled(plugin_id):
+        return
     subprocess.run(["omarchy-shell", "shell", "rescanPlugins"],
                    check=False, capture_output=True)
     subprocess.run(["omarchy-plugin-enable", plugin_id], check=False, capture_output=True)

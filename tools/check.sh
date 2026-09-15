@@ -3,8 +3,7 @@
 # session needed: what needs the real session (screenshots, toggles, the boot
 # preview) lives in CONTRIBUTING.md's clean-room test instead.
 #
-#   ./tools/check.sh                the main repo
-#   ./tools/check.sh --widget DIR   the widget repo
+#   ./tools/check.sh
 #
 # Docker is used for exactly one thing: shellcheck, when it is not installed
 # on the host. Everything else runs here.
@@ -22,12 +21,6 @@ fail() {
 section() {
   echo "· $*"
 }
-
-WIDGET_DIR=""
-if [[ ${1:-} == "--widget" ]]; then
-  WIDGET_DIR="${2:-}"
-  [[ -n $WIDGET_DIR && -d $WIDGET_DIR ]] || { echo "usage: check.sh --widget DIR" >&2; exit 1; }
-fi
 
 # --- shell ---------------------------------------------------------------
 
@@ -104,11 +97,15 @@ provider = json.loads((root / "provider.json").read_text())
 slug, cli = provider["slug"], provider["cli"]
 service = (root / "Service.qml").read_text()
 manifest = json.loads((root / "manifest.json").read_text())
-# The settings file: QML cannot read the provider, so the name is written by
-# hand here and verified here (B1).
-m = re.search(r'configPath: home \+ "([^"]+)"', service)
-if not m or m.group(1) != f"/.config/omarchy/{slug}.json":
-    bad(f"Service.qml configPath is {m.group(1) if m else 'missing'}, want /.config/omarchy/{slug}.json")
+cli = (root / "bin" / "omarchy-matrix").read_text()
+# No switches: Omarchy's own choices decide every piece. Up to 1.2.x a settings
+# file and a bar widget of the pack's own duplicated them.
+if re.search(r'\.config/omarchy/[^"]*\.json', service):
+    bad("Service.qml reads a settings file: the rain must follow Omarchy's choices")
+if "read_setting" in cli or "write_setting" in cli:
+    bad("bin/omarchy-matrix keeps settings: the pieces follow Omarchy's choices")
+if "widget" in provider:
+    bad("provider.json names a widget: the pack has none since 1.3")
 # The IPC target the service registers is the provider's ipc.
 m = re.search(r'target:\s*"([^"]+)"', service)
 if not m or m.group(1) != provider["ipc"]:
@@ -134,9 +131,6 @@ elif not (root / live).is_file():
 stray = sorted(p.name for p in (root / "backgrounds").glob("*-live-*"))
 if stray:
     bad(f"backgrounds/ holds {stray}: the rain's still goes in liveBackground only")
-# The widget pin is a full commit SHA, never a branch.
-if not re.fullmatch(r"[0-9a-f]{40}", provider["widget"].get("ref", "")):
-    bad(f"widget.ref is {provider['widget'].get('ref')!r}, want 40 hex")
 # License: the manifest says MIT and the file to back it is there.
 if manifest.get("license") != "MIT":
     bad(f"manifest license is {manifest.get('license')!r}, want 'MIT'")
@@ -145,7 +139,6 @@ if not (root / "LICENSE").is_file():
 # The update pulls from a URL written out in the CLI, not read from the
 # provider: see the updates section of bin/omarchy-matrix for why. It must stay
 # the provider's own repository.
-cli = (root / "bin" / "omarchy-matrix").read_text()
 urls = re.findall(r'git -C "\$dir" (?:fetch --quiet|pull --ff-only) (\S+) ', cli)
 if len(urls) != 2 or set(urls) != {provider["repoUrl"]}:
     bad(f"the update URLs in bin/omarchy-matrix are {urls}, want {provider['repoUrl']} twice")
@@ -204,7 +197,7 @@ check_ownership() {
     . "$ROOT/lib/pack.sh"
     cat >"$tmp/provider.json" <<JSON
 {"slug": "check", "cli": "check-cli", "rainFiles": ["$rain"],
- "plugin": {"id": "check.rain"}, "widget": {"id": "check.widget"}}
+ "plugin": {"id": "check.rain"}}
 JSON
     pack_load_provider "$tmp/provider.json" >/dev/null || exit 1
     PLUGINS_DIR="$tmp/plugins"
@@ -313,64 +306,17 @@ PY
   ) || failures=$((failures + 1))
 }
 
-# --- coherence: widget repo ----------------------------------------------------
-
-check_widget_coherence() {
-  section "widget coherence in $WIDGET_DIR"
-  MAIN_VERSION=$(python3 -c "import json; print(json.load(open('$ROOT/manifest.json'))['version'])")
-  python3 - "$WIDGET_DIR" "$MAIN_VERSION" <<'PY' || failures=$((failures + 1))
-import json, pathlib, re, sys
-w = pathlib.Path(sys.argv[1])
-errors = []
-def bad(message):
-    errors.append(message)
-manifest = json.loads((w / "manifest.json").read_text())
-panel = (w / "Panel.qml").read_text() if (w / "Panel.qml").is_file() else ""
-if manifest.get("kinds") != ["bar-widget"]:
-    bad(f"kinds is {manifest.get('kinds')}, want ['bar-widget']")
-for kind, path in manifest.get("entryPoints", {}).items():
-    if not (w / path).is_file():
-        bad(f"entryPoint {kind} points at missing {path}")
-if manifest.get("barWidget", {}).get("defaultSection") != "right":
-    bad("barWidget.defaultSection is not 'right'")
-# The one name the panel writes down: the CLI it shells out to, as the
-# absolute path W1 pins it to -- no PATH lookup, no shell.
-m = re.search(r'readonly property string cli:.*?/\.local/bin/omarchy-matrix', panel, re.S)
-if not m:
-    bad("Panel cli is not the absolute ~/.local/bin/omarchy-matrix path")
-if manifest.get("license") != "MIT":
-    bad(f"manifest license is {manifest.get('license')!r}, want 'MIT'")
-if not (w / "LICENSE").is_file():
-    bad("LICENSE is missing")
-if not (w / "preview.png").is_file():
-    bad("preview.png is missing")
-if not (w / "README.md").is_file():
-    bad("README.md is missing")
-if manifest.get("version") != sys.argv[2]:
-    bad(f"widget version {manifest.get('version')} trails the pack {sys.argv[2]}")
-for message in errors:
-    print(f"  FAIL: {message}")
-sys.exit(1 if errors else 0)
-PY
-}
-
 # --- main ----------------------------------------------------------------------
 
-if [[ -n $WIDGET_DIR ]]; then
-  CHECK_ROOT="$ROOT" check_qml "$WIDGET_DIR/Panel.qml"
-  check_validate "$WIDGET_DIR"
-  check_widget_coherence
-else
-  check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
-    tools/capture-showcase.sh tools/check.sh
-  check_python lib/*.py tools/*.py
-  check_qml Service.qml MatrixRain.qml
-  check_validate "$ROOT"
-  check_main_coherence
-  check_repo_hygiene
-  check_ownership
-  check_menu
-fi
+check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
+  tools/capture-showcase.sh tools/check.sh
+check_python lib/*.py tools/*.py
+check_qml Service.qml MatrixRain.qml
+check_validate "$ROOT"
+check_main_coherence
+check_repo_hygiene
+check_ownership
+check_menu
 
 if ((failures > 0)); then
   echo "$failures check(s) failed" >&2
