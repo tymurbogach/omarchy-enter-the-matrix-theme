@@ -17,17 +17,16 @@ omarchy theme install https://github.com/tymurbogach/omarchy-enter-the-matrix-th
 The pack asks one question:
 
 ```
-  This is your last chance. After this, there is no turning back.
-
-  Red pill   You stay in Wonderland, and I show you how deep the rabbit
-             hole goes: rain on the desktop, behind the lock and over the
-             screensaver, and the boot splash (it asks for your password).
-  Blue pill  The story ends. You wake up in your bed with your simple theme.
+This is your last chance. After this, there is no turning back.
+> Red pill    You stay in Wonderland, and I show you how deep the rabbit hole goes.
+  Blue pill   The story ends. You wake up in your bed with your simple theme.
 ```
 
-The red pill is the default. It installs everything at once and restarts the
-shell once. The boot splash asks for your password, because it rebuilds the
-initramfs. The blue pill installs nothing, and you keep the theme alone.
+The red pill is the default: Enter takes it. It installs everything at once,
+the rain on the desktop, behind the lock and over the screensaver, and the
+boot splash. It restarts the shell once. The boot splash asks for your
+password, because it rebuilds the initramfs. The blue pill installs nothing,
+and you keep the theme alone.
 
 A theme from git may not run code when Omarchy installs it, so the pack is the
 second half of the line. For the theme alone, run only the first half.

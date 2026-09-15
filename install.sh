@@ -56,8 +56,6 @@ if [[ $HERE == "$HOME/.config/omarchy/themes/"* && $here_name != "$SLUG" ]]; the
 fi
 
 G=$'\033[38;2;'$((16#${ACCENT:1:2}))';'$((16#${ACCENT:3:2}))';'$((16#${ACCENT:5:2}))'m' # the provider's accent
-RED=$'\033[31m'
-BLUE=$'\033[34m'
 DIM=$'\033[2m'
 BOLD=$'\033[1m'
 OFF=$'\033[0m'
@@ -81,27 +79,25 @@ say() {
 # terminal there is nobody to ask, and the red pill goes without the boot
 # splash, which needs a password.
 
+#
+# The colours are Omarchy's: gum reads the GUM_* variables that Omarchy
+# generates from the current theme (default/themed/gum_env.lua.tpl).
+
+HEADER="This is your last chance. After this, there is no turning back."
+RED_PILL="Red pill    You stay in Wonderland, and I show you how deep the rabbit hole goes."
+BLUE_PILL="Blue pill   The story ends. You wake up in your bed with your simple theme."
+
 take_the_red_pill() {
   local choice=""
-  cat <<EOF
-
-  ${BOLD}This is your last chance. After this, there is no turning back.${OFF}
-
-  ${RED}${BOLD}Red pill${OFF}   You stay in Wonderland, and I show you how deep the rabbit
-             hole goes: rain on the desktop, behind the lock and over the
-             screensaver, and the boot splash (it asks for your password).
-  ${BLUE}${BOLD}Blue pill${OFF}  The story ends. You wake up in your bed with your simple theme.
-
-EOF
+  echo
   if command -v gum >/dev/null; then
-    choice=$(gum choose --header "" --cursor "  > " --cursor.foreground "$ACCENT" \
-      "Red pill" "Blue pill") || choice=""
+    choice=$(gum choose --header "$HEADER" "$RED_PILL" "$BLUE_PILL") || choice=""
   else
-    printf '  Red pill or blue pill? [R/b] '
+    printf '  %s\n\n  %s\n  %s\n\n  [R/b] ' "$HEADER" "$RED_PILL" "$BLUE_PILL"
     read -r choice || choice=""
-    if [[ ${choice,,} == b* ]]; then choice="Blue pill"; else choice="Red pill"; fi
+    if [[ ${choice,,} == b* ]]; then choice="$BLUE_PILL"; else choice="$RED_PILL"; fi
   fi
-  [[ $choice == "Red pill" ]]
+  [[ $choice == "$RED_PILL" ]]
 }
 
 if ((FIRST_INSTALL && !SYNC_ONLY && INTERACTIVE)) && ! take_the_red_pill; then
@@ -116,6 +112,23 @@ if ((!SYNC_ONLY)); then
   [[ $version == $TESTED_ON* ]] ||
     echo "  ${DIM}Tested on Omarchy $TESTED_ON, and this is $version. If the lock or boot patch no longer fits, it stops and says so.${OFF}" >&2
   echo
+fi
+
+# --- the boot splash, first ---------------------------------------------------
+# The only piece that needs a password, so it comes first: the user types it
+# once, and the rest installs on its own. It runs from here, before the CLI is
+# copied: the deriver needs only provider.json and the theme folder that
+# `omarchy theme install` has just made. Without a terminal there is nobody to
+# ask, and a cached sudo grant would rebuild the initramfs unasked.
+boot_skipped=0
+if ((FIRST_INSTALL && !SYNC_ONLY)); then
+  if ((INTERACTIVE)); then
+    say "Setting the boot splash (it asks for your password)"
+    OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-plymouth.py" || boot_skipped=1
+    echo
+  else
+    boot_skipped=1
+  fi
 fi
 
 # --- the plugin -------------------------------------------------------------
@@ -272,19 +285,6 @@ in_effect=0
 # theme set starts on the rain by itself, and Style > Background changes it.
 if ((FIRST_INSTALL && in_effect)) && [[ -e $LIVE_LINK ]]; then
   omarchy-theme-bg-set "$LIVE_LINK" >/dev/null 2>&1 || true
-fi
-
-# The boot splash is last because it is the only piece that needs a password and
-# rebuilds the initramfs. Without a terminal there is nobody to ask, and a
-# cached sudo grant would rebuild the initramfs unasked.
-boot_skipped=0
-if ((FIRST_INSTALL)); then
-  if ((INTERACTIVE)); then
-    say "Setting the boot splash (it asks for your password)"
-    "$BIN_DIR/$CLI" boot on || boot_skipped=1
-  else
-    boot_skipped=1
-  fi
 fi
 
 echo
