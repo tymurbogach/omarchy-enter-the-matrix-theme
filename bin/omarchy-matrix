@@ -448,6 +448,10 @@ status_row() { # <on|off> <piece> <text>
 # the machinery. After `omarchy refresh shell` wiped shell.json, a status that
 # read settings ticked a lock that Omarchy's own lock had replaced.
 cmd_status() {
+  # Up to 1.2.x, `status --is <piece>` answered yes or no, and scripts of the
+  # user's own may still ask it. An option ignored here would answer yes to
+  # every question, so any option fails.
+  (($# == 0)) || fail "status takes no options (the pieces have no switches since 1.3)"
   local version
   version=$(pack_version)
   printf '  %s%s\n\n' "$DISPLAY_NAME" "${version:+ $version}"
@@ -585,7 +589,7 @@ command="${1:-status}"
 shift || true
 
 case "$command" in
-status) cmd_status ;;
+status) cmd_status "$@" ;;
 doctor) cmd_doctor ;;
 update) cmd_update "$@" ;;
 boot) cmd_boot "$@" ;;
