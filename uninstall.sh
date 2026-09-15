@@ -180,43 +180,44 @@ DONE
   exit 0
 fi
 
+STOCK_THEMES="${OMARCHY_PATH:-/usr/share/omarchy}/themes"
+
 theme_exists() {
   [[ -n ${1:-} ]] || return 1
-  [[ -d "$HOME/.config/omarchy/themes/$1" || -d "/usr/share/omarchy/themes/$1" ]]
+  [[ -d "$HOME/.config/omarchy/themes/$1" || -d "$STOCK_THEMES/$1" ]]
 }
 
-# Where to land. In order: the theme you were on before you picked this one,
-# then whatever you say when there is a terminal to ask on, and only then the
-# first stock theme -- which is alphabetical, which is why everyone who ever
-# uninstalled this pack ended up on catppuccin.
+# Where to land. First, the theme you were on before you picked this one: the
+# theme-set hook writes it down every time you leave this theme.
+#
+# Omarchy keeps no theme history, so an install that never left this theme has
+# nothing written down. Then Omarchy's own theme picker asks, the one that
+# Style › Theme opens (`theme=$(omarchy-theme-switcher)` in Omarchy's menu).
+# It used to be a list in the terminal, with the first stock theme as the
+# default: alphabetical, so everybody landed on catppuccin.
+#
+# If you pick nothing, or this theme, or there is no desktop to show the picker
+# on: Omarchy's own default theme, the one that its installer sets.
 step_off_target() {
   if theme_exists "$PREVIOUS_THEME"; then
     echo "$PREVIOUS_THEME"
     return
   fi
 
-  local first reply
-  first=$(find /usr/share/omarchy/themes -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | head -1)
+  local fallback="tokyo-night" reply=""
+  theme_exists "$fallback" ||
+    fallback=$(find "$STOCK_THEMES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | head -1)
 
-  # Not `-t 1`: this function is called from a command substitution, so its
-  # stdout is a pipe by construction and would say "no terminal here" on a
-  # machine that plainly has one. The prompt goes to stderr, so ask about that.
-  if [[ -t 0 && -t 2 ]]; then
-    echo >&2
-    echo "  This theme is about to go. Which one do you want instead?" >&2
-    find "$HOME/.config/omarchy/themes" /usr/share/omarchy/themes -mindepth 1 -maxdepth 1 -type d \
-      -printf '%f\n' 2>/dev/null | grep -vx "$SLUG" | sort -u | column -c 74 | sed 's/^/  /' >&2
-    printf '  [%s] ' "$first" >&2
-    read -r reply || true
-    reply=${reply// /}
-    if theme_exists "$reply"; then
-      echo "$reply"
-      return
-    fi
-    [[ -z $reply ]] || printf '\n  no theme called %s; using %s\n' "'$reply'" "$first" >&2
+  if [[ -n ${WAYLAND_DISPLAY:-} ]] && command -v omarchy-theme-switcher >/dev/null; then
+    echo "  This theme is about to go. Pick the one to go back to." >&2
+    reply=$(omarchy-theme-switcher 2>/dev/null) || reply=""
+  fi
+  if [[ $reply != "$SLUG" ]] && theme_exists "$reply"; then
+    echo "$reply"
+    return
   fi
 
-  echo "$first"
+  echo "$fallback"
 }
 
 if [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null) == "$SLUG" ]]; then

@@ -122,7 +122,9 @@ screensaver and splash in charge again.
 The theme has to go somewhere, and it goes back to **the one you were using
 before you picked this one**. The `theme-set` hook writes that down every time you
 leave, because Omarchy overwrites `current/theme.name` before any hook runs and
-afterwards nobody knows. If there is nothing recorded, it asks.
+afterwards nobody knows. If you never left the theme, nothing is written down,
+and Omarchy's own theme picker asks, the same one as in Style › Theme. If you
+pick nothing, you land on Tokyo Night, Omarchy's default.
 
 Pass `--keep-theme` if you want the colours and backgrounds to stay behind as an
 ordinary Omarchy theme.
