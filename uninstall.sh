@@ -162,6 +162,13 @@ fi
 # current/theme.name pointing at nothing, so step off it first.
 
 if ((KEEP_THEME)); then
+  # A kept theme is the theme alone, and the theme alone never offers the rain.
+  # With the plugin gone, the rain's still would stand frozen on the desktop, so
+  # Omarchy moves on to the theme's next background.
+  on_rain=0
+  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) != *-live-* ]] || on_rain=1
+  withdraw_live_background
+  ((!on_rain)) || omarchy-theme-bg-next >/dev/null 2>&1 || true
   cat <<DONE
 
 Done. The theme was kept and works like any other Omarchy theme.
