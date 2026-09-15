@@ -74,14 +74,17 @@ The two derived pieces are the two that can lock a user out.
   The two escape hatches are `omarchy plymouth reset`, and `plymouth.enable=0`
   on the kernel line in the boot loader.
 
-### 5. Everything is a layer. Off must mean gone
+### 5. Omarchy decides. Everything is a layer. Off must mean gone
 
-- Each piece (`wallpaper`, `screensaver`, `lock`, `boot`) switches on and off
-  alone. A switch has no effect on the other three pieces.
-- Another theme stands everything down: nothing rains, nothing has a tick, and
-  no plugin of the pack stays enabled. `enter-the-matrix.json` stays, so a
-  return to the theme restores the same state. `boot` is the one exception,
-  because Plymouth belongs to the system and not to the theme.
+- The pack has no switches. Each piece follows a choice that Omarchy already
+  offers: Style › Background for the desktop, the idle service for the
+  screensaver, the theme for the lock, Style › Unlock for the boot splash.
+  Up to 1.2.x each piece also had a switch of its own. Two answers to one
+  question could disagree, and the user had to learn both.
+- Another theme stands everything down: nothing rains, and no plugin of the
+  pack stays enabled. A return to the theme brings it all back. The boot
+  splash is the one exception, because Plymouth belongs to the system and not
+  to the theme.
 - Off removes what the piece wrote, also outside `$HOME`. A user who never
   uninstalls must still end up with a clean machine.
 - Nothing of Omarchy's stays disabled.
@@ -117,13 +120,16 @@ Each trap cost real debugging time. The code does not show any of them.
 
 ### The shell and its plugins
 
+Up to 1.2.x the pack had a bar widget. Its traps stay here, because they apply
+to any bar widget.
+
 **For a `bar-widget`, "enabled" means "present in `bar.layout`".**
 `PluginRegistry.setEnabled` inserts the layout entry when you enable the
 plugin. It removes the entry when you disable the plugin
 (`PluginRegistry.qml:498-520`), and `isEnabled` answers from the entry.
 
 So a plugin that is a widget and also something else cannot switch off without
-the loss of its bar icon. That is why the rain and the switchboard are two
+the loss of its bar icon. That is why the rain and the old switchboard were two
 plugins.
 
 **A bar widget with no `implicitWidth` paints nothing, and nothing warns you.**
@@ -158,13 +164,12 @@ Escape does not close the panel, and a second summon does not close it either.
 
 Only a shell restart closes it. Omarchy's own `omarchy.bluetooth` behaves the
 same way, so the cause is the environment and not the pack. When you test,
-drive the widget's cursor with `wtype` right after `omarchy-restart-shell`.
+drive a panel's cursor with `wtype` right after `omarchy-restart-shell`.
 Otherwise the panel ignores you, and that looks like a bug of ours.
 
 **A hot reload does not resize the slot of a bar widget.** After the two
 `implicit*` lines went into a live widget, the slot stayed 0 px wide through
-several reloads. It took its size only after `omarchy-restart-shell`. For this
-reason, `install.sh` ends with one shell restart.
+several reloads. It took its size only after `omarchy-restart-shell`.
 
 **A hot reload of plugin QML can leave two instances alive.** The old instance
 keeps answering IPC while the new one paints. The symptom: IPC reports `false`
@@ -187,8 +192,9 @@ This is
 and it is still open. **We cannot fix it from here.** It occurs in 0.3.0 and in
 0.3.1, so do not look for a package update that "broke" it.
 
-Our workload made it frequent. `suspend` disables two plugins, removes the lock
-clone, prunes its backup and restarts the shell, all in one second. There were
+Our workload made it frequent. Up to 1.2.x `suspend` disabled two plugins,
+removed the lock clone, pruned its backup and restarted the shell, all in one
+second. There were
 fifteen core dumps in three days, and each one came from a `theme set` away
 from the pack.
 
@@ -210,26 +216,39 @@ nothing until the folder is complete. `rm -rf` on the live folder causes the
 same burst in reverse. Rename the folder to `.<id>.retired` first, and then
 delete that.
 
+**Each shell restart is a flicker, so a command restarts once at most.** A
+restart blanks the bar and the background for a moment. Up to 1.2.x each step
+that needed a restart did its own. The journal of one reinstall showed two
+reloads each of the rain plugin, the widget and the lock clone, and then one
+or two restarts.
+
+Now each command compares `pack_fingerprint` (`lib/pack.sh`) before and after
+its work: the enabled lock plugins, and the bytes of the rain plugin and of the
+lock clone. It restarts once at the end, and only if that changed.
+`install.sh` and `derive-lock.py` leave a live folder alone when its files are
+the same.
+
+Measured on this machine: an update from 1.2.1 restarts once, a reinstall of
+the same version restarts nothing, and a theme set away or back restarts once.
+To count them yourself, run
+`journalctl --user --since <time> | grep -cE 'Launching config|Local plugin changed'`.
+
 **`omarchy refresh shell` rewrites all of `shell.json`.** That file records the
 enabled plugins and the bar layout, and no hook runs after a refresh. To
 recover, run `omarchy-matrix doctor` or apply the theme again.
 
 This was verified on this machine. After a refresh, `doctor` restored the rain
-plugin, the lock clone (with `omarchy.lock` disabled again) and the widget
-entry in the bar. It restores the pack and nothing else: the user's own plugins
+plugin, the lock clone (with `omarchy.lock` disabled again) and, in 1.2.x, the
+widget entry in the bar. It restores the pack and nothing else: the user's own plugins
 and bar order come back from Omarchy's own `shell.json.bak.<timestamp>`.
 
 **A tick must ask the machinery, not the settings.** The same refresh showed
 this. With `shell.json` wiped, `status` printed `✓ lock` and `✓ wallpaper`,
 but the rain plugin was disabled and Omarchy's own lock was in charge.
 
-The settings were true and the theme was ours, but nothing happened.
-`is_active` now asks whether the plugin is enabled, whether the lock clone is
-the enabled lock, and whether Omarchy's own screensaver is on.
-
-The widget's panel follows the same rule: its switch shows what happens now. If
-a piece is on in the settings but not in effect, the line under the switch
-gives the reason, in the words that `status` uses.
+The settings were true and the theme was ours, but nothing happened. `status`
+now asks whether the plugin is enabled, whether the lock clone is the enabled
+lock, and whether Omarchy's own screensaver is on.
 
 **A repair command that does not check the theme creates again the state that
 it exists to fix.** The pack was found raining under everforest. `theme set`
@@ -243,11 +262,9 @@ work.
 Now, under another theme:
 
 - `doctor` only syncs files, and stands down any piece that is still up.
-- A piece command writes the setting and leaves the apply to the next
-  `theme set`.
 - `status` says so when pieces are up while the pack is stood down.
 
-`boot` is the exception, because it belongs to the system.
+The boot splash is the exception, because it belongs to the system.
 
 ### Updates, themes and menus
 
@@ -271,12 +288,26 @@ new mtime, and that is the event that this comparison is for.
 - `~/.config/omarchy/themes/<theme>/backgrounds/` is the carousel that the
   theme ships.
 - `~/.config/omarchy/backgrounds/<theme>/` is where the user adds extras. It
-  does not exist until the user adds one.
+  does not exist until the user adds one, or until the pack links the rain
+  there.
 
-`omarchy-theme-set:78` searches both. So the second directory looks like the
-real one when you search, but usually it does not exist. If you check "did my
-new backgrounds arrive?" against the second path, you get a failure that is
-not real.
+`omarchy-theme-set:78` searches both. If you check "did my new backgrounds
+arrive?" against the second path, you get a failure that is not real.
+
+**A theme set starts on the first background, and the user's folder sorts
+first.** `omarchy-theme-set` sorts the full paths of both folders. `~/.config/`
+sorts before `~/.local/state/`, where Omarchy stages the theme's backgrounds.
+So the user's folder comes first, in the C locale and in en_US.UTF-8.
+
+That is the extension point for the rain. Up to 1.2.x, `doctor` forced the rain
+after every theme set of this theme, and so fought Omarchy's rotation. Now the
+rain's still lives outside `backgrounds/`, and the pack links it into the
+user's folder. A theme set then starts on the rain by itself, and Style ›
+Background lists it like any other background. The theme alone never offers a
+still of rain that never moves.
+
+`uninstall` removes the link and nothing else. Up to 1.2.x it deleted the whole
+folder, together with the user's own backgrounds in it.
 
 **A theme installed from git may not ship a `.lua` file.** It also may not ship
 `alacritty.toml`, `foot.ini`, `ghostty.conf`, `kitty.conf` or `vscode.json`
@@ -317,26 +348,20 @@ A search for `omarchy-hook` with `-r` found nothing. Use `grep -R`.
 **In jq, `(.[$k] // true)` returns `true` when the value is `false`.** Use
 `if has($k) then .[$k] else true end` instead.
 
-**The widget comes from its own repo. It is not in a `widget/` folder here.**
-It moved to `omarchy-matrix-widget`, so that the widget could be a plugin with
-one manifest at its root. A merge into the manifest of the rain plugin would
-break the independent on/off switch (see the `PluginRegistry.setEnabled` trap).
-The marketplace lists only this repo, and the pack pins the widget to one
-commit.
+**An older install migrates on its next `doctor`, theme set or uninstall.**
+Up to 1.2.x the pack kept a switch per piece in
+`~/.config/omarchy/enter-the-matrix.json`. A bar widget came from the repo
+`omarchy-matrix-widget`, pinned to one commit. `pack_migrate` (`lib/pack.sh`)
+takes both back once:
 
-`install.sh` fetches the commit that `widget.ref` in `provider.json` names, a
-full 40-character SHA. It caches the commit in
-`~/.local/share/omarchy-matrix/widget-src`. If the cache is already at that
-commit, `install.sh` does not use the network.
-
-If the cache cannot reach the commit, `install.sh` keeps the widget that is
-already staged. So `omarchy-matrix doctor`, which runs `install.sh --sync`,
-still works offline.
-
-A git submodule was rejected. The clean-room test clones with a plain
-`git clone`, without `--recurse-submodules`, and a submodule would silently
-leave that folder empty. For local work against an uncommitted checkout of the
-widget repo, set `MATRIX_WIDGET_SRC=<path>`.
+- The settings file goes. The theme to return to on uninstall moves to
+  `~/.local/share/omarchy-matrix/previous-theme`. The screensaver flag that
+  1.2.0 set goes back first, because only the old file can tell whose flag it
+  is.
+- The widget plugin goes with `omarchy plugin remove`, and with it its entry
+  on the bar. Its backups, its repo cache and the update answer that only its
+  panel read go too. A checkout that somebody added with `omarchy plugin add`
+  carries a `.git` and stays.
 
 ### The lock and the screensaver
 
@@ -391,9 +416,10 @@ Stay Awake, the timings in `shell.json`, the idle inhibitors and the key that
 ends the screensaver all stay Omarchy's. `omarchy-system-lock` closes the
 screensaver, so the rain goes when the lock comes.
 
-The `screensaver-off` flag is the user's switch again. Only an explicit
-`screensaver on` clears it. `tools/check.sh` fails if `Service.qml` starts to
-decide on its own again.
+The `screensaver-off` flag is the user's switch again, and
+`omarchy toggle screensaver` sets and clears it. The pack never touches it,
+except once to hand back the flag that 1.2.0 set. `tools/check.sh` fails if
+`Service.qml` starts to decide on its own again.
 
 Two lessons of the old design still apply to any overlay that takes input:
 
@@ -410,6 +436,15 @@ the state.
 A script that read `enabled` as "idle is allowed" turned a user's Stay Awake
 off when it restored the machine. Save `.enabled` as it is, and restore Stay
 Awake only if it was `true`.
+
+**`omarchy-launch-screensaver` does nothing if any command line holds its app
+id.** It starts with `pgrep -f '[o]rg.omarchy.screensaver' && exit 0`. A test
+command that names `org.omarchy.screensaver`, for example in a `jq` filter,
+matches too. The launcher then exits 0, and no screensaver opens. `pkill -f`
+with the same pattern kills that test shell.
+
+Put such a test in a script file, and build the app id from two strings. The
+command line of `bash test.sh` names neither.
 
 **`qsb` is not on `PATH`: it is at `/usr/lib/qt6/bin/qsb`.** The shipped
 `matrix.frag.qsb` was built with `--glsl 300es,330 --hlsl 50 --msl 12`. Other
@@ -708,16 +743,15 @@ Run the cheap checks first:
 ```bash
 bash -n install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/*.sh
 python3 -m py_compile lib/*.py tools/*.py
-./tools/check.sh                                     # cheap checks and coherence checks
-./tools/check.sh --widget ../omarchy-matrix-widget   # the same for the widget repo
-omarchy-plugin-validate .                            # must pass, or nobody can install it
+./tools/check.sh              # cheap checks and coherence checks
+omarchy-plugin-validate .     # must pass, or nobody can install it
 ```
 
 Then run the test that decides whether the pack can be published: **install
 the pack as a stranger does, on a machine that has never had it.** A read of
 the diff is not this test. `./install.sh` from the working copy is not this
 test either. That path runs with `~/.local/bin` already warm, the hooks already
-in place, and an `enter-the-matrix.json` full of old answers.
+in place, and a share dir that makes `install.sh` skip its question.
 
 Run the six phases in order. Verify each phase as the user sees it: the result
 on screen, not the output of the commands. A failure in any phase stops the
@@ -732,8 +766,9 @@ release.
      `omarchy-matrix-uninstall`);
    - `~/.local/share/omarchy-matrix/`;
    - `/usr/share/plymouth/themes/omarchy-matrix/`;
-   - the widget entry in the bar layout of `shell.json`;
-   - `~/.config/omarchy/enter-the-matrix.json`;
+   - the link `~/.config/omarchy/backgrounds/enter-the-matrix/0-live-rain.png`;
+   - from 1.2.x: the widget entry in the bar layout of `shell.json`, and
+     `~/.config/omarchy/enter-the-matrix.json`;
    - the theme directory;
    - the flag `~/.local/state/omarchy/toggles/screensaver-off`, unless you set
      it yourself. The pack set it up to 1.2.0;
@@ -749,15 +784,19 @@ release.
 2. **Install from the published URL**, never from the working copy. Follow the
    README literally, and do nothing that it does not say. The stranger does
    not know what the README leaves out.
+
+   Answer the question with Enter, which is the red pill. Count the shell
+   restarts in the journal: exactly one. Once per release, run the line with
+   the blue pill first: nothing on the machine may change, except the theme.
 3. **Verify on screen that the four pieces are on.** A configured piece is not
    enough.
+   - Desktop: the background is the rain right after the install, and
+     `hyprctl layers -j` lists `matrix-rain-wallpaper`.
    - Lock: take a **screenshot**, not a status query. Open
      `omarchy-shell lock preview` and photograph it with `grim`.
    - Screensaver: run `omarchy-launch-screensaver force` and photograph it. The
      rain must cover Omarchy's screensaver. Once per release, also wait out
      `idle.screensaver` without input, with Stay Awake off.
-   - Widget: take a screenshot of the bar **and** of the open panel. An icon
-     that occupies zero pixels passes every other check.
    - Boot splash: use `tools/preview-plymouth.sh`. Photograph the typed line,
      the passphrase dialog with some dots in it, and the progress track at
      0 %, part way and full. No scenario alone reaches the dots or the track:
@@ -771,21 +810,19 @@ release.
 
    Every non-visual check once passed while the machine locked to Omarchy's
    blurred wallpaper. Only the picture showed the fault.
-4. **Switch each piece off and on again, one at a time.** Each time, check
-   that the other pieces did not move. After `lock off`, `omarchy.lock` must
-   not be in `disabledPlugins`, and no `.bak` folder must remain. Check
-   `lock on` with a screenshot, not with a query.
-
-   At least one switch must come from the widget itself, not only from the
-   CLI. Before you use `wtype`, confirm that the panel has the keyboard.
-   Then `wtype -k Down` and `wtype -k Return` drive its cursor without a
-   mouse. Do this **immediately after `omarchy-restart-shell`**, or the panel
-   does not have the keyboard (see the traps).
+4. **Change each of Omarchy's choices, one at a time.** Each time, check that
+   the other pieces did not move.
+   - Style › Background: pick a photograph. The desktop rain goes, and the
+     lock and the screensaver still rain. Then pick the rain again.
+   - `omarchy toggle screensaver`: no screensaver opens, so no rain either,
+     and `status` says why. Toggle it back.
+   - Style › Unlock: see phase 3.
 5. **Switch to another theme and back.**
-   - Away: nothing rains, nothing has a tick, **no Matrix icon stays on the
-     bar**, and Omarchy's own lock and screensaver answer again. Nothing of
-     Omarchy's stays disabled.
-   - Back: exactly the pieces that were on before are on again.
+   - Away: nothing rains, nothing has a tick, and Omarchy's own lock and
+     screensaver answer again. Nothing of Omarchy's stays disabled, and no
+     `.bak` folder of ours remains.
+   - Back: the background is the rain again with no command of ours, and the
+     lock rains. Each way restarts the shell once.
 6. **Uninstall, and compare the machine with phase 1.** Anything that is still
    there is a bug, not a detail.
 
@@ -799,11 +836,14 @@ photographs the result:
 | Wallpaper | `hyprctl dispatch 'hl.dsp.focus({ workspace = "5" })'`, on an empty workspace | the same call with your own workspace |
 | Screensaver | `omarchy-launch-screensaver force` | `pkill -f '[o]rg.omarchy.screensaver'`, as `omarchy-system-lock` does |
 | Lock | `omarchy-shell lock preview` | `omarchy-shell lock hidePreview` |
-| Widget panel | `omarchy-shell shell summon io.github.tymurbogach.enter-the-matrix.widget` | a shell restart (a second summon does not close it) |
 
 `hyprctl layers -j` lists `matrix-rain-wallpaper` while the desktop rain is
-mapped, and `matrix-rain-screensaver` while the rain covers the screensaver. `omarchy-shell matrix status` answers from inside the plugin. So it
-proves that the plugin reads the settings that the CLI writes.
+mapped, and `matrix-rain-screensaver` while the rain covers the screensaver.
+`omarchy-shell matrix status` answers from inside the plugin. So it shows which
+background the plugin sees, and whether it sees Omarchy's screensaver.
+
+Run the screensaver row from a script file, not from a one-line command: see
+the trap about `omarchy-launch-screensaver` and `pgrep -f`.
 
 `grim` needs a lit, unlocked screen. If the lid is closed or DPMS is off,
 `grim` waits and never returns. If the session is locked, the lock covers the
@@ -814,17 +854,6 @@ then fail cleanly: uninstall prints "skipped", and the installed splash stays.
 So a run without a terminal cannot strip or reinstall the boot splash. Check
 the splash with `tools/preview-plymouth.sh`, which needs no sudo. Run the boot
 steps from a terminal before a release.
-
-Do not drive the widget with `wtype` unless you can confirm that the panel has
-the keyboard. If another window has the focus, the keys go there, and a
-terminal runs them. When you cannot confirm the focus, toggle through the CLI.
-Then test the widget's commands through the launcher, with the same argument
-that the widget sends:
-
-```bash
-"$OMARCHY_PATH/bin/omarchy-launch-floating-terminal-with-presentation" \
-  "'$HOME/.local/bin/omarchy-matrix' status"
-```
 
 Right after a shell restart, `omarchy plugin remove` can print "omarchy-shell
 is not responding". The removal still completes.

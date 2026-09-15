@@ -21,8 +21,9 @@ after every `omarchy update`, so Omarchy's fixes keep arriving.
 If the block to replace does not appear exactly once, the script **aborts and
 tells you** rather than leaving things half done.
 
-Try it without locking yourself out: `omarchy-shell lock preview`. To go back to
-Omarchy's: `omarchy-matrix lock off`.
+Try it without locking yourself out: `omarchy-shell lock preview`. Omarchy's own
+lock comes back when you pick another theme, and for good with
+`omarchy-matrix uninstall`.
 
 ## The boot splash
 
@@ -196,44 +197,27 @@ hiding `label-pango` and every font but the three the initramfs would have.
 |---|---|
 | `colors.toml` | The palette. Semantic, not `color0..15`. Includes the Hyprland border colours, which go through the template. |
 | `shell.{bar,menu,launcher,notifications}.toml` | Shell section overrides: they give the bar and the cards some relief, which otherwise all paint the same black. |
-| `backgrounds/` | The carousel. `0-pills.jpg` is the default, so installing only the theme still gives you a wallpaper. `1-live-rain.png` is a still frame of the shader: thumbnail, marker and fallback in one — selecting it is what turns the desktop rain on, and the shader finds it by the `-live-` in its name. The rest are stills: seven from the film, three not. |
+| `backgrounds/` | The carousel. `0-pills.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: seven from the film, three not. |
+| `live/` | The rain's still, `0-live-rain.png`: thumbnail, marker and fallback in one. It is not in the carousel, so the theme alone never offers it. The pack links it into Omarchy's folder for your own backgrounds of this theme, which Omarchy lists first, so a theme set starts on the rain. The plugin finds it by the `-live-` in its name. |
 | `unlock.png`, `preview-unlock.png` | The static boot mark: what Omarchy's own Style › Unlock installs for this theme, and its card there. With the pack, the same card installs the animation instead, where `logo.png` goes invisible and the lines are typed. |
 | `manifest.json`, `Service.qml`, `MatrixRain.qml`, `matrix.frag.qsb`, `glyphs.png` | The plugin. |
-| *(not here)* | The bar widget — one icon, four switches, Repair and Uninstall — lives in its own repo, [omarchy-matrix-widget](https://github.com/tymurbogach/omarchy-matrix-widget), so it can be submitted to plugins.omarchy.org on its own. `install.sh` fetches it and caches it under `~/.local/share/omarchy-matrix/widget-src`; `provider.json`'s `widget.repo`/`widget.ref` say which repo and which ref. |
 | `provider.json` | The only file that names this provider — slug, plugin ids, Plymouth theme, the lines typed at boot. Everything else is machinery. |
 | `bin/` | `omarchy-matrix`, the one command on PATH (a link to the share dir). |
 | `lib/` | The shared shell (`pack.sh`), the two derivers and `provider.py` — the machinery the CLI, `install.sh` and `uninstall.sh` run from the share dir. |
 | `tools/` | Dev tools, never installed: `preview-plymouth.sh`, `capture-showcase.sh` and `generate-showcase.py` (the pictures in `docs/showcase/` and `preview.png`), `generate-brand.py`, `generate-backgrounds.py`, `generate-atlas.py` and the `matrix.frag` shader source. |
 | `fonts/` | The face the boot splash is drawn in, shipped as a file rather than named as a dependency. See `fonts/README.md`. |
 
-### status --json
+### No switches
 
-The one document the widget reads, and the one definition of the ✓. Fields:
+Up to 1.2.x each piece had a switch, in the CLI, in a settings file and in a
+bar widget. Omarchy already decides every piece: Style › Background, its idle
+service, the theme, Style › Unlock. Two answers to one question could
+disagree, so the pack keeps only Omarchy's. `omarchy-matrix status` asks the
+machinery for each ✓, never a setting.
 
-| Field | What it is |
-|---|---|
-| `schema` | The protocol version, currently 1. Readers take 1 and reject anything else, so either side can grow without silent misreads. |
-| `name`, `slug` | The provider's display name and theme slug, from `provider.json`. |
-| `version` | The version of the theme folder, from its `manifest.json`. Empty when the folder is gone. |
-| `theme` | The current theme, from Omarchy's state directory. |
-| `active` | Whether the pack is in effect: the current theme is ours. `boot` is exempt, since the splash belongs to the system. |
-| `settings` | What was asked for, per piece, from the pack's own settings file. |
-| `pieces` | What is happening now, per piece: asked for AND in effect AND applied (the live background selected, the plugin enabled, our lock in charge, our splash installed). |
+### omarchy-matrix update
 
-### update --check --json
-
-What the widget asks when its panel opens. It is apart from `status` because
-it can reach GitHub, and `status` has to stay instant. The CLI keeps the
-answer for six hours in `~/.cache/omarchy-matrix/update.json`, keyed on the
-commit of the theme folder.
-
-| Field | What it is |
-|---|---|
-| `schema` | 1, as for `status`. |
-| `current` | The version of the theme folder. |
-| `latest` | The version on GitHub. Empty when there is nothing to offer. |
-| `available` | `true` only when the theme folder can fast-forward to a newer commit. No network, no git clone, or commits of your own all give `false`. |
-
+`omarchy-matrix update --check` looks for a newer version, and
 `omarchy-matrix update` pulls with `--ff-only` from the repository URL written
 out in the command, then runs `doctor` from the pulled theme. The URL is
 literal on purpose: see the updates section of `bin/omarchy-matrix`.
@@ -313,7 +297,7 @@ here, rather than pretending the hex came off a frame.
 
 **The backgrounds are not regenerated.** `generate-backgrounds.py` requires
 `--out` and writes nowhere by default, on purpose: every shipped background is
-now either a still or `1-live-rain.png`, all of them committed, and an
+a still, the rain's `live/0-live-rain.png` included, all of them committed, and an
 argument-less run had one job left — to overwrite a file somebody had
 deliberately removed. It stays because a fresh frame of the rain is still worth
 being able to paint.
