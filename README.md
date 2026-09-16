@@ -176,17 +176,18 @@ uninstall.
 ## The backgrounds
 
 ```
-0-pills.jpg            the default: what you get with the theme alone
-2-neo-sleep.jpg
-3-morpheus.jpg
-4-sunglasses.jpg
-5-hotel-corridor.jpg
-6-green-street.jpg
-7-the-office.jpg
-8-helicopter.png       daylight raid, pale green sky
-9-neo-white.jpg        Neo on white, the bright one
-10-trinity-neo.jpg     Trinity and Neo, warm and dark
-live/0-live-rain.png   the rain: the pack adds it, first in the list
+00-pills-hands.jpg       the default: what you get with the theme alone
+01-morpheus-pills.jpg
+02-neo-desk-overhead.jpg
+03-morpheus-reflection.jpg
+04-hotel-corridor.jpg
+05-rain-street.jpg
+06-office-crt.jpg
+07-trinity-neo.jpg        Trinity and Neo, warm and dark
+08-digital-city.jpg
+09-matrix-crew.jpg
+10-neo-room.jpg
+live/0-live-rain.png     the rain: the pack adds it, first in the list
 ```
 
 The rain is not in `backgrounds/`, so the theme alone never offers a still of the
@@ -198,12 +199,12 @@ The rain's name carries `-live-`, and that substring, not a file name or a
 position in the list, is what the plugin watches for. Everything else is an
 ordinary wallpaper and stays one when you pick it.
 
-> `0-pills.jpg`, `2-neo-sleep.jpg`, `3-morpheus.jpg`, `4-sunglasses.jpg`,
-> `8-helicopter.png`, `9-neo-white.jpg` and `10-trinity-neo.jpg` are frames
+> `00-pills-hands.jpg`, `02-neo-desk-overhead.jpg`, `03-morpheus-reflection.jpg`,
+> `07-trinity-neo.jpg` and `10-neo-room.jpg` are frames
 > from *The Matrix* (1999), © Warner Bros. They are here because this is a
 > fan theme and they are what the theme is about. They are not covered by this
 > repository's MIT licence, which applies to the code. If you would rather not
-> carry them, delete those seven and pick your own. Any file with `-live-` in
+> carry them, delete those files and pick your own. Any file with `-live-` in
 > its name, in your folder for this theme, becomes the rain's marker.
 
 ## The palette
