@@ -582,9 +582,11 @@ Make the guard fail below 1 % ink (nothing drawn), or above 60 % (a block
 shape that looks like the progress track). The table that this note held
 before was wrong for more than one glyph.
 
-These values were measured again in Terminus, the face that ships: `-` 4.1 %,
-`·` 1.4 %, `•` 5.6 %, `▪` 0 % (missing in this font), `*` 13.6 %, `●` 5.6 %,
-`■` 18.7 %, `▊` 73 %, `█` 94.6 %.
+These values were measured in Terminus, the face that shipped before Courier
+Prime: `-` 4.1 %, `·` 1.4 %, `•` 5.6 %, `▪` 0 % (missing in this font),
+`*` 13.6 %, `●` 5.6 %, `■` 18.7 %, `▊` 73 %, `█` 94.6 %. The bounds above are
+what matters, not the table; and the track is drawn now rather than typeset,
+because Courier never had a full block at all.
 
 **A font can render `●` as a blocky octagon, not a disc, and its ink share
 does not show that.** TerminessNerdFont derives from Terminus, which is a

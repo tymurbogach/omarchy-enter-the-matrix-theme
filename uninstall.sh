@@ -127,6 +127,17 @@ if [[ -d "/usr/share/plymouth/themes/$PLYMOUTH_THEME" && ${live_plymouth:-} != "
     echo "  skipped — remove it later with: sudo rm -rf /usr/share/plymouth/themes/$PLYMOUTH_THEME" >&2
 fi
 
+# The splash's text face, both copies: the system one rode in with the boot
+# splash, and the user-local one with the derive step. Off means gone.
+if [[ -d /usr/share/fonts/omarchy-matrix ]]; then
+  echo "· removing the boot face from /usr/share/fonts (needs your password)"
+  sudo rm -rf /usr/share/fonts/omarchy-matrix ||
+    echo "  skipped — remove it later with: sudo rm -rf /usr/share/fonts/omarchy-matrix" >&2
+  sudo fc-cache -f >/dev/null 2>&1 || true
+fi
+rm -f "$HOME/.local/share/fonts/CourierPrime-Regular.ttf"
+fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
+
 # `omarchy plugin remove` renames rather than deletes: every folder taken away
 # above is still on disk as .<id>.bak.<timestamp>. Take ours back (in
 # lib/pack.sh); a lock clone somebody made themselves stays.

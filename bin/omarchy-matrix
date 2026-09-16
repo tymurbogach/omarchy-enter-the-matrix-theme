@@ -378,10 +378,15 @@ boot_off() {
 # Omarchy's theme back but leaves ours in /usr/share/plymouth/themes, so off
 # takes it back too. Always AFTER the reset, never before: pulling the folder
 # out from under a theme that is still the default boots to a black screen.
+# The text face in /usr/share/fonts goes with it: it arrived with the splash,
+# and only the splash needs it there.
 remove_plymouth_theme() {
   local dir="/usr/share/plymouth/themes/$PLYMOUTH_THEME"
-  [[ -d $dir ]] || return 0
-  sudo rm -rf "$dir"
+  [[ -d $dir ]] && sudo rm -rf "$dir"
+  if [[ -d /usr/share/fonts/omarchy-matrix ]]; then
+    sudo rm -rf /usr/share/fonts/omarchy-matrix
+    sudo fc-cache -f >/dev/null 2>&1 || true
+  fi
 }
 
 # Two rows of Omarchy's menu (lib/derive-menu.py): in Style > Unlock the card of

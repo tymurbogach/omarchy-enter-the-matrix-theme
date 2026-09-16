@@ -43,9 +43,23 @@ SLUG = PROVIDER["slug"]
 CLI = PROVIDER["cli"]
 THEME = PROVIDER["plymouth"]["theme"]
 TARGET = Path("/usr/share/plymouth/themes") / THEME
+# Where the boot's text face lives on the system. The mkinitcpio hook resolves
+# `Font=` with fc-match as root, so a user-local install is not enough: the
+# face has to be visible system-wide, or the initramfs gets the wrong file.
+SYS_FONT_DIR = Path("/usr/share/fonts/omarchy-matrix")
 
-# What is typed out at boot, in order.
+# What is typed out before the passphrase is answered, in order. Knock is last
+# on purpose: in the film it lands with the knock at Neo's door, and here it
+# lands with the prompt.
 LINES = PROVIDER["plymouth"]["lines"]
+
+# ...and what is typed once the passphrase is accepted, when boot proceeds.
+# The script holds the storyboard at the end of LINES while a passphrase
+# dialog is up, and the unlock callback releases it -- so on an encrypted disk
+# this line only ever starts once the disk is open. On a disk with no
+# passphrase there is no dialog to wait for, and the storyboard plays through.
+# Empty or absent keeps the old shape: the boot lines, then progress.
+AFTER_UNLOCK = PROVIDER["plymouth"].get("afterUnlock") or []
 
 # ...and what is typed on the way out. Keyed by the mode plymouthd was started
 # with, which is exactly what `Plymouth.GetMode()` hands back -- verified with
@@ -60,7 +74,14 @@ LINES = PROVIDER["plymouth"]["lines"]
 #
 # A mode with no entry falls through to LINES, so an older provider.json -- and
 # any provider that does not care -- keeps exactly the splash it had.
-MODE_LINES = {"boot": LINES, **(PROVIDER["plymouth"].get("modes") or {})}
+# "boot" is the pre lines plus the post-unlock tail: one storyboard, with a
+# held gate between them rather than two dispatches.
+BOOT_LINES = LINES + AFTER_UNLOCK
+MODE_LINES = {"boot": BOOT_LINES, **(PROVIDER["plymouth"].get("modes") or {})}
+# How many of the boot images belong to the pre phase. The gate sits after
+# the last of these, and the type size is fixed by the longest of these --
+# the tail must never resize what was already settled by looking at it.
+PRE_COUNT = len(LINES)
 
 # The typed lines take the THEME's `green` -- its accent, out of colors.toml at
 # derive time. Repeating the hex in provider.json would work today and drift the
@@ -102,8 +123,10 @@ DENIED_TEXT = PROVIDER["plymouth"].get("deniedText", "ACCESS DENIED")
 # The family Plymouth is told about in the .plymouth. It decides which single
 # TTF the mkinitcpio hook copies into the initramfs, and therefore what the one
 # thing still drawn as TEXT comes out in -- the caps lock label. Everything
-# whose shape matters is a PNG instead; see FONT_FILE.
-FONT = "JetBrainsMono Nerd Font"
+# whose shape matters is a PNG instead; see FONT_FILE. Installed system-wide
+# by this script (see main), because a family the machine does not have
+# resolves to the wrong face with nothing to say so.
+FONT = "Courier Prime"
 
 # ...and the face the splash is actually drawn in, as a FILE, out of the theme's
 # own fonts/ directory rather than out of fc-match.
@@ -113,13 +136,22 @@ FONT = "JetBrainsMono Nerd Font"
 # splash comes out in the wrong face with nothing anywhere to say so. A file in
 # the theme cannot miss. It is also why the typed lines are baked: at boot there
 # is no fc-match at all, so a per-call family is ignored outright.
-FONT_FILE = "fonts/TerminessNerdFont-Regular.ttf"
+FONT_FILE = "fonts/CourierPrime-Regular.ttf"
 
-BLOCK = "█"                 # full block: the progress track is a row of these
+# ...and the face the PANEL's own text is drawn in: the band captions and the
+# progress digits. A chunky pixel face, the way the film draws its dialogs --
+# at the panel's on-screen size a fine serif downscales to uneven stems, while
+# chunky pixels survive. The typed boot lines stay in FONT_FILE above: Neo's
+# monitor and Trinity's dialog are different screens, kept different here too.
+PANEL_FONT_FILE = "fonts/VT323-Regular.ttf"
+
 # The progress readout's characters, as one strip to crop cells out of. Baked
 # for the same reason everything else here is: at boot the font is whatever the
 # initramfs happens to hold, and digits in a face that does not match the box
 # they sit inside is exactly the kind of seam this design exists to close.
+# (The track itself is drawn, not typeset -- this face never had a full block,
+# as no Courier does -- but it is drawn on the digits' own measured cell, so
+# the two still share one grid. See splash_assets.)
 ATLAS = "0123456789% "
 
 # --- the animation, in frames of the 50 fps refresh omarchy.script assumes ---
@@ -129,8 +161,8 @@ OPEN_PAUSE = 60             # black, before the first letter
 HOLD_PAUSE = 120            # once a line is complete
 GAP_PAUSE = 60              # cleared screen, before the next line
 #
-# At 10 keystrokes a second the four lines take 22 s, and the storyboard plays
-# ONCE -- `mx_advance` returns for good at the last step, it does not loop. Only
+# At 10 keystrokes a second the three pre lines take ~17 s, the tail another
+# 5 s, and the storyboard plays ONCE -- `mx_advance` returns for good at the last step, it does not loop. Only
 # 3.3 s of the splash is deterministic (plymouth-start to plymouth-quit); all
 # the rest is the initrd phase, for as long as the disk's passphrase takes. So
 # on a machine that boots fast, or unlocks fast, the later lines are simply
@@ -142,18 +174,43 @@ GAP_PAUSE = 60              # cleared screen, before the next line
 # stops, which on this laptop is a couple of seconds. At the boot pace the first
 # line would still be typing itself when the power went.
 #
-# So: no held black at the start, half again the keystroke rate, and a hold long
-# enough to read once rather than to sit on. Even then, assume only the FIRST
-# line is ever seen -- which is why the first line of each exit is the payoff.
-EXIT_FRAMES_PER_CHAR = 3    # -> ~17 keystrokes a second
-EXIT_OPEN_PAUSE = 10
-EXIT_HOLD_PAUSE = 50
-EXIT_GAP_PAUSE = 25
+# So: no held black at the start, two and a half times the keystroke rate, and
+# a hold long enough to read once rather than to sit on. The first line of
+# each exit is still the payoff -- a real shutdown/reboot splash lives only a
+# couple of seconds, so no pacing guarantees both lines on every machine --
+# but the pauses below are tightened until a two-line exit plays in ~2.9-3.3 s
+# (measured: reboot 2.9s, shutdown 3.3s), which gives the second line a real
+# chance instead of none.
+EXIT_FRAMES_PER_CHAR = 2    # -> ~25 keystrokes a second: fast, still legible
+EXIT_OPEN_PAUSE = 5
+EXIT_HOLD_PAUSE = 20
+EXIT_GAP_PAUSE = 8
 
 # How long the one-shot feedback holds the passphrase row before handing it
 # back -- to the progress track for GRANTED, to an empty field for DENIED.
 GRANTED_HOLD = 60           # 1.2s
 DENIED_HOLD = 60            # 1.2s
+
+# --- the phosphor halo -------------------------------------------------------
+# The film's monitor is not flat ink: each glyph carries a soft halo, a few
+# pixels wide, of its own colour. Plymouth has no blur at runtime, so the halo
+# is baked here as a blurred twin of every typed line and layered under the
+# crisp core at boot. Same size as the core (blur keeps dimensions), same
+# crop, so no cell math changes: every guard below still measures the CORE.
+#
+# 0x5 baked nearly invisible (~2-3 px once scaled to the on-screen cell), so
+# the lines read flat. The first attempt at wider, 0x18, measured wrong: its
+# cut through a glyph falls only 109 to ~70-90 across 60 px of bake, a flat
+# fog with no bright edge anywhere -- neighbouring halos merge into one haze
+# instead of one bleed per letter. 0x8 keeps the gradient: 163 beside the ink
+# falling to ~15 within 48 px of bake, i.e. a hot edge that decays outward,
+# the way the reference stills bloom. 0.7 opacity keeps that edge present
+# without washing the core out. Single layer on purpose: Plymouth sprites
+# have opacity only, no additive blend, so a second tighter inner halo stays
+# in reserve for if this still reads weak next to the reference, not shipped
+# on a guess.
+LINE_GLOW_BLUR = "0x8"      # bake pixels at size=120; reads as bleed on screen
+LINE_GLOW_OPACITY = 0.7     # halo sprite opacity under the opaque core
 
 
 def pace(mode):
@@ -162,6 +219,44 @@ def pace(mode):
         return FRAMES_PER_CHAR, OPEN_PAUSE, HOLD_PAUSE, GAP_PAUSE
     return (EXIT_FRAMES_PER_CHAR, EXIT_OPEN_PAUSE, EXIT_HOLD_PAUSE,
             EXIT_GAP_PAUSE)
+
+
+def keystroke_frames(char, prev, pos, base, line_seed=0):
+    """Frames for one typed character: a human hand, not a metronome.
+
+    Derived here so the .script stays a dumb step table with no string
+    slicing. Deterministic: same phrase types the same way every boot.
+    Spaces are fast, punctuation lands heavy, capitals cost a shift.
+    A small positional jitter plus a burst/breath cycle breaks the
+    leftover metronome inside plain lowercase runs.
+    """
+    if char == " ":
+        return max(2, base - 2)
+    frames = base
+    if pos == 0:
+        frames += 2  # first key finds the rhythm
+    if char.isupper() and prev != " " and prev != "":
+        frames += 1  # mid-word capital reaches
+    elif char.isupper():
+        frames += 2  # shift held for it
+    if char in ",;:":
+        frames += 5
+    elif char in ".!?":
+        frames += 7
+        if prev in ".!?":
+            frames += 4  # second and third dot of "..." hang
+    elif char in "'-":
+        frames += 2
+    # Hand noise: -1..+1 from char and position, seeded per line so no
+    # two lines share the same wobble. Bursts of two fast keys then one
+    # breath, on a 9-key cycle offset per line.
+    frames += ((ord(char) * 7 + pos * 13 + line_seed * 5) % 3) - 1
+    phase = (pos + line_seed * 3) % 9
+    if phase in (4, 5):
+        frames -= 1
+    elif phase == 6:
+        frames += 2
+    return max(2, frames)
 
 # --- layout, all of it in fractions of the window ---------------------------
 # NOTHING here is a pixel count, and no point size is worked out at derive time.
@@ -178,8 +273,10 @@ KEY_CELLS = 21              # passphrase slots, at most. 21 on purpose: it
                             # track blocks + a gap + 4 digits), so both rows
                             # fill the panel the same way -- and it is ODD,
                             # so one typed circle lands on the exact centre.
-PROMPT_WIDTH = 0.42         # sizes the CAPS LOCK label; the disk's own prompt
-                            # this was named for is no longer drawn
+PROMPT_WIDTH = 0.27          # sizes the CAPS LOCK label; the disk's own prompt
+                            # this was named for is no longer drawn. Nine
+                            # tenths of the box below, so the label belongs to
+                            # the panel rather than to the window.
 
 # --- the box ----------------------------------------------------------------
 # The film's prompt is a framed panel with a filled title band across its top.
@@ -198,13 +295,15 @@ PROMPT_WIDTH = 0.42         # sizes the CAPS LOCK label; the disk's own prompt
 # 0.58 to fix contents that looked small, which was the wrong knob: the
 # caption's own scale and the panel's internal proportions were the actual
 # problem, and both are fixed below. With those right, 0.40 is enough panel --
-# 0.58 was simply too big on a real screen.
-BOX_WIDTH = 0.40            # of the window
+# 0.58 was simply too big on a real screen. And 0.30 is a quarter off that:
+# the film's prompt is a small nested dialog (RTF CONTROL / ACCESS GRANTED
+# in the corner of Trinity's screen), not a centred billboard.
+BOX_WIDTH = 0.30            # of the window
 BOX_CELLS = 26              # interior width, in cells: 25 of content and air
 
 # --- the progress track -----------------------------------------------------
 # Not a fraction of the window: it is measured in CELLS of the passphrase line,
-# so the dots, the blocks and the digits all land on one monospace grid. The
+# so the dashes, the blocks and the digits all land on one monospace grid. The
 # track is one image drawn twice -- the whole of it at TRACK_ALPHA, and the part
 # that is done, opaque, on top -- so an empty track is the same object as a full
 # one rather than a different material. `[████░░░░] 42%` was the old readout:
@@ -271,17 +370,44 @@ def storyboard(mode="boot"):
     `line` is an index into MODE_IMAGES[mode], not into the mode's own list --
     every mode's pictures share one flat table in the script, so a step can be
     used without knowing which mode it came from.
+
+    Returns (steps, gate). In boot mode with post-unlock lines, gate is the
+    index of the last pre line's HOLD step: the script holds there while a
+    passphrase dialog is up, resting on the finished line rather than on the
+    cleared screen after it, and the unlock callback releases it. None
+    everywhere else.
     """
-    lines = MODE_LINES[mode]
+    if mode == "boot":
+        pre, post = LINES, AFTER_UNLOCK
+    else:
+        pre, post = MODE_LINES[mode], []
     per_char, open_pause, hold_pause, gap_pause = pace(mode)
     steps = [(0, 0, open_pause)]
-    for index, phrase in enumerate(lines):
+    gate = None
+    for index, phrase in enumerate(pre):
         for n in range(1, len(phrase) + 1):
-            steps.append((index, n, per_char))
+            char = phrase[n - 1]
+            prev = phrase[n - 2] if n > 1 else ""
+            steps.append((index, n, keystroke_frames(char, prev, n - 1,
+                                                     per_char, index)))
         steps.append((index, len(phrase), hold_pause))
-        if index != len(lines) - 1:
+        if index != len(pre) - 1 or post:
             steps.append((index, 0, gap_pause))
-    return steps
+    if post:
+        # The last pre line's hold step, not the gap after it: holding here
+        # rests on the finished line, while the gap would rest on a blank.
+        gate = len(steps) - 2
+        for offset, phrase in enumerate(post):
+            index = len(pre) + offset
+            for n in range(1, len(phrase) + 1):
+                char = phrase[n - 1]
+                prev = phrase[n - 2] if n > 1 else ""
+                steps.append((index, n, keystroke_frames(char, prev, n - 1,
+                                                         per_char, index)))
+            steps.append((index, len(phrase), hold_pause))
+            if offset != len(post) - 1:
+                steps.append((index, 0, gap_pause))
+    return steps, gate
 
 
 def percent_cells():
@@ -307,7 +433,7 @@ TYPING = string.Template("""
 # the password dialog below measures itself against, and moving that would move
 # Omarchy's own geometry with it.
 #
-# The four lines are PICTURES, one per line, baked at derive time in the theme's
+# The lines are PICTURES, one per line, baked at derive time in the theme's
 # own face. At boot there is no fc-match, so a font family asked for by name is
 # ignored and every Image.Text comes out in whatever single TTF the initramfs
 # holds -- which is no way to choose a typeface. Typing is therefore a Crop: N
@@ -379,7 +505,23 @@ $DISPATCH
 global.mx_frame = 0;
 global.mx_painted = -1;
 
+# The gate between asking and entering: the last pre-unlock line's hold step.
+# -1 when the provider names no post-unlock tail, and then this never matches.
+# mx_unlocked is released by the accepted-password path below -- and only
+# there: normal also fires when the splash is first shown, before any dialog,
+# and Plymouth re-fires it when the renderer re-shows, so `password_shown`
+# alone cannot tell acceptance apart from arrival.
+global.mx_gate = $GATE;
+global.mx_unlocked = 0;
+
 mx.sprite = Sprite();
+# The halo twin rides one layer under the crisp core, same box, same crop.
+# Plymouth has no blur, so the blur was baked at derive time; here it is just
+# a second sprite that appears and clears together with the core.
+mx_glow.sprite = Sprite();
+mx_glow.sprite.SetPosition(Math.Int(global.mx_w * $TEXT_X),
+                           Math.Int(global.mx_h * $TEXT_Y), 9999);
+mx_glow.sprite.SetOpacity(0);
 # The left edge never moves: the line grows rightwards from a fixed column, the
 # way a terminal does. Centring it would shuffle the whole line sideways on
 # every keystroke.
@@ -394,11 +536,15 @@ fun mx_paint(step) {
   if (shown < 1) {
     # A held blank: the pause before the first line, and between them.
     mx.sprite.SetOpacity(0);
+    mx_glow.sprite.SetOpacity(0);
     return;
   }
   mx.sprite.SetImage(global.mx_img[global.mx_line[step]].Crop(
     0, 0, Math.Int(shown * global.mx_cell_w), global.mx_line_h));
   mx.sprite.SetOpacity(1);
+  mx_glow.sprite.SetImage(global.mx_glow[global.mx_line[step]].Crop(
+    0, 0, Math.Int(shown * global.mx_cell_w), global.mx_line_h));
+  mx_glow.sprite.SetOpacity($GLOW_ALPHA);
 }
 
 fun mx_tick() {
@@ -406,6 +552,12 @@ fun mx_tick() {
   mx_feedback_tick();
 
   if (global.mx_step >= global.mx_end) return;
+
+  # Held at the gate while a passphrase dialog is up: the pre lines rest on
+  # their last line until the disk is open, and only then does the tail type.
+  # No dialog -- no encryption -- means no hold: the storyboard plays through.
+  if (global.mx_gate >= 0 && global.mx_step == global.mx_gate &&
+      global.mx_unlocked == 0 && global.password_shown == 1) return;
 
   if (global.mx_painted == -1) {
     mx_paint(global.mx_step);
@@ -507,17 +659,30 @@ mx_box.sprite = Sprite();
 mx_box.sprite.SetPosition(global.mx_box_x, global.mx_box_y, 10000);
 mx_box.sprite.SetOpacity(0);
 
-# The interior grid. All three of these are FRACTIONS OF THE BOX'S WIDTH,
-# measured when the box was drawn, so they scale with it and no pixel count ever
-# crosses from the machine that derived this to the one that boots it.
+# The interior grid. mx_cell and mx_in_x are FRACTIONS OF THE BOX'S WIDTH,
+# measured when the box was drawn, so they scale with it and no pixel count
+# ever crosses from the machine that derived this to the one that boots it.
+# mx_in_y and mx_in_h are FRACTIONS OF THE BOX'S HEIGHT instead: the whole
+# panel image (corner squares included) is scaled to (mx_box_w, mx_box_h),
+# but mx_box_h is clamped against the screen room while mx_box_w never is,
+# so a width-based row drifts down past the panel's own compressed bottom
+# edge when the clamp fires. Height-based, the row rides the same vertical
+# squash as the baked band and stays where it was drawn. Unclamped the two
+# bases agree exactly (box_h == box_w * BOX_ASPECT at derive time).
 #
 # Everything inside is scaled to a whole number of these cells and rendered at
 # one point size, which is what puts the mask, the track and the digits on a
 # single monospace grid instead of three that nearly agree.
 global.mx_cell = global.mx_box_w * $BOX_CELL_FRAC;
 global.mx_in_x = global.mx_box_x + Math.Int(global.mx_box_w * $BOX_PAD_FRAC);
-global.mx_in_y = global.mx_box_y + Math.Int(global.mx_box_w * $BOX_ROW_FRAC);
-global.mx_in_h = Math.Int(global.mx_cell * $CELL_ASPECT);
+global.mx_in_y = global.mx_box_y + Math.Int(global.mx_box_h * $BOX_ROW_FRAC);
+# The row's HEIGHT is the unkerned pitch times the aspect -- NOT mx_cell:
+# `cell` carries kerning's air, which belongs between glyphs horizontally,
+# not stacked vertically. Sizing the height off the kerned cell stretches
+# every row by kerning's share (19% on the panel's face), which is exactly
+# the oval-mask look a real boot photographed once. Pitch times aspect is
+# the row's own baked height, scaled -- nothing more.
+global.mx_in_h = Math.Int(global.mx_box_h * $BOX_PITCH_FRAC * $CELL_ASPECT);
 
 # The panel's content rows -- the passphrase ($KEY_CELLS slots) and the track
 # plus its gap plus the digits -- are all $ROW_CELLS cells wide here, share
@@ -525,18 +690,18 @@ global.mx_in_h = Math.Int(global.mx_cell * $CELL_ASPECT);
 # left: a short passphrase stranded off to one side of a wide box is exactly
 # what the old left anchor did. The progress fill still grows left to right
 # inside its centred track; only the passphrase fill re-centres per keystroke,
-# so one circle sits exactly in the middle and the row grows outward
+# so one dash sits exactly in the middle and the row grows outward
 # symmetrically.
 global.mx_row_w = Math.Int($ROW_CELLS * global.mx_cell);
 global.mx_row_x = global.mx_box_x + Math.Int((global.mx_box_w - global.mx_row_w) / 2);
 global.mx_pass_w = Math.Int($KEY_CELLS * global.mx_cell);
 global.mx_pass_x = global.mx_box_x + Math.Int((global.mx_box_w - global.mx_pass_w) / 2);
 
-# The passphrase: one circle per typed character, growing from the centre
+# The passphrase: one dash per typed character, growing from the centre
 # outward on the panel's grid. The field shows nothing until the first
 # keystroke -- there is no placeholder row.
-# The typed circles live in their own image, `keydots.png` -- no glyph in the
-# shipped font draws a clean disc, so they are drawn, not typeset. The fill
+# The typed dashes live in their own image, `keydots.png` -- drawn, not
+# typeset, the way the film's field answers with `-`. The fill
 # below crops its prefix out of here; it is never shown whole.
 mx_dots.image = Image("keydots.png");
 mx_dots.scaled = mx_dots.image.Scale(Math.Int($KEY_CELLS * global.mx_cell), global.mx_in_h);
@@ -717,12 +882,12 @@ fun mx_password_callback(prompt, bullets) {
       # changes on these two real events, never on a tick that changed
       # nothing.
       global.mx_was_denied = 0;
-      # Centred as a GROUP, not left-anchored: the typed dots grow outward
+      # Centred as a GROUP, not left-anchored: the typed dashes grow outward
       # from the middle of the centred row, so one dot sits exactly
       # in the centre rather than stranded off to one side of a wide box.
       # The offset is a WHOLE number of cells from the row's own left
-      # edge, so every bright dot lands exactly on the shared grid: a
-      # fractional offset would park each dot between two cells, straddling them.
+      # edge, so every bright dash lands exactly on the shared grid: a
+      # fractional offset would park each dash between two cells, straddling them.
       key_w = Math.Int(shown * global.mx_cell);
       key_x = global.mx_pass_x + Math.Int((($KEY_CELLS - shown) / 2) * global.mx_cell);
       mx_key_fill.sprite.SetPosition(key_x, global.mx_in_y, 10002);
@@ -739,6 +904,10 @@ fun mx_normal_callback() {
   # Omarchy's first: it hides its dialog and starts the fake progress, and that
   # timing is its business, not ours.
   display_normal_callback();
+  # Whether OUR dialog was up when normal arrived: the one signal that tells
+  # acceptance apart from a splash (re-)show. Read before mx_hide_dialog()
+  # below clears it.
+  dialog_was_up = global.mx_dialog_on;
   # ...but the bar it just showed is the rounded one, and we draw a readout.
   progress_box.sprite.SetOpacity(0);
   progress_bar.sprite.SetOpacity(0);
@@ -750,7 +919,14 @@ fun mx_normal_callback() {
   # function with password_shown still 1 from the very first keystroke, and
   # painted ACCESS GRANTED over a rejected password. `mx_was_denied` is what
   # actually rules that out: see its own declaration and mx_password_callback.
-  if (global.password_shown == 1 && global.mx_was_denied == 0) {
+  if (global.password_shown == 1 && global.mx_was_denied == 0 &&
+      dialog_was_up == 1) {
+    # ...and the gate opens: the dialog was up and now normal is back, so the
+    # passphrase was accepted and the post-unlock tail may type. Only HERE --
+    # normal also fires when the splash is first shown, before any dialog, and
+    # Plymouth re-fires it whenever the renderer re-shows, so a history flag
+    # cannot tell acceptance apart from arrival. The dialog still being up can.
+    global.mx_unlocked = 1;
     # ACCESS GRANTED in the band itself -- mx_feedback_tick() hands it to the
     # progress caption, and starts the real track, once $GRANTED_HOLD runs out.
     mx_box.sprite.SetImage(mx_box.granted_scaled);
@@ -845,24 +1021,37 @@ def typing_block(font, metrics):
     sprite pointing at an image that was never loaded.
     """
     load, table, slices = [], [], {}
+    boot_gate = -1              # no post-unlock tail: the gate never matches
+    image_base = 0              # image slots; load holds 2 statements per image
     for mode, lines in MODE_LINES.items():
-        first_image = len(load)
+        first_image = image_base
         # One Image() and one Scale() per line, at start-up, never again. Each
         # is scaled to its OWN character count times the shared cell, which is
-        # what keeps pictures of different lengths on one grid.
+        # what keeps pictures of different lengths on one grid. The halo twin
+        # rides the same slot in mx_glow.
         for index, cells in enumerate(metrics["LINE_CELLS"][mode]):
+            slot = first_image + index
             load.append(
-                f'global.mx_img[{len(load)}] = Image("line-{mode}-{index}.png")'
+                f'global.mx_img[{slot}] = Image("line-{mode}-{index}.png")'
+                f".Scale(Math.Int({cells} * global.mx_cell_w), "
+                f"global.mx_line_h);")
+            load.append(
+                f'global.mx_glow[{slot}] = '
+                f'Image("lineglow-{mode}-{index}.png")'
                 f".Scale(Math.Int({cells} * global.mx_cell_w), "
                 f"global.mx_line_h);")
 
         first_step = len(table)
-        for line, shown, frames in storyboard(mode):
+        steps, gate = storyboard(mode)
+        if mode == "boot" and gate is not None:
+            boot_gate = first_step + gate
+        for line, shown, frames in steps:
             table.append(
                 f"global.mx_line[{len(table)}] = {first_image + line}; "
                 f"global.mx_shown[{len(table)}] = {shown}; "
                 f"global.mx_dur[{len(table)}] = {frames};")
         slices[mode] = (first_step, len(table))
+        image_base += len(lines)
 
     # Boot is the fallback, so it is assigned before the tests rather than
     # inside one: a mode nobody thought of gets the boot lines, not a blank
@@ -877,11 +1066,12 @@ def typing_block(font, metrics):
     return TYPING.substitute(
         NAME=name, RULE="-" * max(1, 35 - len(name)), CLI=CLI, FONT=font,
         R=DIALOG_COLOUR[0], G=DIALOG_COLOUR[1], B=DIALOG_COLOUR[2],
+        GLOW_ALPHA=LINE_GLOW_OPACITY,
         TEXT_X=TEXT_X, TEXT_Y=TEXT_Y, TEXT_WIDTH=TEXT_WIDTH,
         WIDEST_CELLS=metrics["WIDEST_CELLS"], LINE_ASPECT=metrics["LINE_ASPECT"],
         LINE_LOAD="\n".join(load), TABLE="\n".join(table),
         BOOT_FIRST=slices["boot"][0], BOOT_END=slices["boot"][1],
-        DISPATCH=dispatch or "# (this provider names no exit lines)")
+        GATE=boot_gate, DISPATCH=dispatch or "# (this provider names no exit lines)")
 
 
 # The four cells of the progress readout. The TABLES and the SPRITES are
@@ -924,6 +1114,7 @@ def dialog_block(metrics):
         NAME=name, RULE="-" * max(1, 28 - len(name)),
         BOX_WIDTH=BOX_WIDTH, BOX_ASPECT=metrics["BOX_ASPECT"],
         BOX_CELL_FRAC=metrics["BOX_CELL_FRAC"],
+        BOX_PITCH_FRAC=metrics["BOX_PITCH_FRAC"],
         BOX_PAD_FRAC=metrics["BOX_PAD_FRAC"],
         BOX_ROW_FRAC=metrics["BOX_ROW_FRAC"],
         CELL_ASPECT=metrics["CELL_ASPECT"],
@@ -937,14 +1128,15 @@ def dialog_block(metrics):
         PCT_TABLE=table, PCT_SPRITES=sprites, PCT_SHOW=show, PCT_PAINT=paint)
 
 
-def splash_assets(target, font_path, line_hex):
+def splash_assets(target, font_path, line_hex, panel_path):
     """Everything the splash draws, baked to PNG here rather than typeset there.
 
     At boot there is no fc-match, so `label-freetype` ignores any font family
     asked for by name and renders everything in the one TTF the mkinitcpio hook
     put in the initramfs. A theme therefore cannot choose a typeface through
-    Image.Text -- it can only choose one through pixels. So the four lines, the
-    passphrase field, the progress track, its digits and the panel around them
+    Image.Text -- it can only choose one through pixels. So the typed lines,
+    the passphrase field, the progress track, its digits and the panel around
+    them
     all arrive as pictures, and the only text left at boot is the caps label,
     which is the system's own word rather than ours.
 
@@ -962,31 +1154,32 @@ def splash_assets(target, font_path, line_hex):
     if not Path(font_path).is_file():
         die(f"the splash's font is missing: {font_path}\n"
             f"  It ships with the theme, in {FONT_FILE}. Re-install the theme.")
+    if not Path(panel_path).is_file():
+        die(f"the panel's font is missing: {panel_path}\n"
+            f"  It ships with the theme, in {PANEL_FONT_FILE}. "
+            f"Re-install the theme.")
 
     size = 120                      # generous: everything is only scaled DOWN
 
-    # Air between the track/digit glyphs, and between the mask's own dots (which
-    # share their grid but are drawn, not typeset -- see BLOCK's own comment for
-    # why). `kerning` has a hard ceiling: the mask row must not outgrow the
+    # Air between the digit glyphs, the drawn track segments, and the mask's
+    # own dashes (which share their grid but are drawn, not typeset: the
+    # film's passphrase field answers with `-`, and no glyph hunt is worth
+    # what one rectangle draws exactly).
+    # `kerning` has a hard ceiling: the mask row must not outgrow the
     # panel's interior, i.e. KEY_CELLS*(pitch+kerning) <= BOX_CELLS*pitch, which
     # at this font's own measured pitch works out to roughly kerning <= 0.24 *
-    # pitch (~0.12 * size). 0.10 reads clearly separated; the fit guard after
-    # `pitch` is what says if that still fits the interior.
-    kerning = int(size * 0.10)
-    # How much of its own cell each dot fills, corner to corner. Bounded by the
-    # same shared-cell-width guard as everything else on this grid (drawing it
-    # too big would make the row read as blocks, exactly what BLOCK's own
-    # comment on MASK's history exists to avoid) -- otherwise tuned by eye
-    # against the reference. 0.95 is as close to the cell walls as dots get
-    # before they start reading as blocks again; the ink-share guard below
-    # (0.01..0.60 of a full block) is what says if that still reads as dots.
-    mask_diameter = 0.95
+    # pitch (~0.12 * size). 0.08 reads clearly separated; the fit guard after
+    # `pitch` is what says if that still fits the interior. (0.10 was tuned
+    # against a wider face; on the panel's narrower pixel face it eats the
+    # whole budget -- the guard below died saying exactly that.)
+    kerning = int(size * 0.08)
 
-    def render(text, colour, out, kerning=0):
+    def render(text, colour, out, face=None, kerning=0):
         subprocess.run(
             ["magick", "-background", "none", "-fill", colour,
              *(["-kerning", str(kerning)] if kerning else []),
-             "-font", str(font_path), "-pointsize", str(size), f"label:{text}",
+             "-font", str(face or font_path), "-pointsize", str(size),
+             f"label:{text}",
              "-background", "none", "-flatten", "-strip", str(out)], check=True)
 
     def measure(path):
@@ -1013,6 +1206,11 @@ def splash_assets(target, font_path, line_hex):
         line_cells[mode] = [len(line) for line in lines]
         for index, line in enumerate(lines):
             render(line, f"#{line_hex}", target / f"line-{mode}-{index}.png")
+            subprocess.run(
+                ["magick", str(target / f"line-{mode}-{index}.png"),
+                 "-blur", LINE_GLOW_BLUR,
+                 "-strip", str(target / f"lineglow-{mode}-{index}.png")],
+                check=True)
         sizes = [measure(target / f"line-{mode}-{index}.png")
                  for index in range(len(lines))]
         units += [w / c for (w, _), c in zip(sizes, line_cells[mode])]
@@ -1065,10 +1263,11 @@ def splash_assets(target, font_path, line_hex):
             f"anywhere would say why. Respell it, or ship a face that has them.")
 
     # And does every line fit on the screen at the boot's cell? The cell is
-    # fixed by the longest BOOT line so that no mode changes the type size (see
-    # the template), which means a longer line in another mode does not shrink
-    # anything -- it runs off the right-hand edge instead, silently.
-    widest = max(line_cells["boot"])
+    # fixed by the longest PRE line so that no mode -- and not even the
+    # post-unlock tail -- changes the type size (see the template), which
+    # means a longer line elsewhere does not shrink anything -- it runs off
+    # the right-hand edge instead, silently.
+    widest = max(line_cells["boot"][:PRE_COUNT])
     for mode, cells in line_cells.items():
         overrun = TEXT_X + max(cells) / widest * TEXT_WIDTH
         if overrun > 0.97:
@@ -1079,28 +1278,51 @@ def splash_assets(target, font_path, line_hex):
                 f"{int((0.97 - TEXT_X) / TEXT_WIDTH * widest)} characters.")
 
     # --- what goes inside the panel -----------------------------------------
-    # The track and the digits are typeset, same as everything else -- BLOCK
-    # and the atlas are ordinary, well-behaved monospace glyphs in this font.
-    render(BLOCK * BAR_CELLS, f"#{DIALOG_HEX}", target / "bar.png", kerning=kerning)
-    render(ATLAS, f"#{DIALOG_HEX}", target / "digits.png", kerning=kerning)
-
-    inside = {"bar.png": BAR_CELLS, "digits.png": len(ATLAS)}
-    cells = {}
-    for name, count in inside.items():
-        w, h = measure(target / name)
-        # +kerning: `-kerning` adds air between EVERY adjacent pair, count-1
-        # gaps for `count` glyphs, so the naive w/count under-counts the true
-        # per-character stride by roughly kerning/count. Applied identically to
-        # all three renders, so the guard below still compares them on equal
-        # footing.
-        cells[name] = ((w + kerning) / count, h)
-    widths = [c for c, _ in cells.values()]
+    # The digits are typeset in the PANEL's face -- the pixel face of the
+    # film's dialogs, not the serif of the typed lines. Same reason as the
+    # captions below: fine stems do not survive the panel's on-screen size.
+    # The track stays DRAWN: no pixel face has a full block either. It is
+    # drawn on the digits' own measured cell, which keeps both on one grid
+    # by construction rather than by a guard comparing two renders.
+    render(ATLAS, f"#{DIALOG_HEX}", target / "digits.png", panel_path,
+           kerning=kerning)
+    # The panel's face gets the same two guards the lines' face got above.
+    # Monospace first: the readout crops cells out of this strip, so every
+    # glyph but the space must be one identical cell (the space's advance was
+    # measured at selection time -- uniform 400/1000 em with the rest).
+    widths = []
+    for ch in ATLAS:
+        if ch == " ":
+            continue
+        probe_ch = target / ".panelch.png"
+        render(ch, "#FFFFFF", probe_ch, panel_path)
+        widths.append(measure(probe_ch)[0])
+        probe_ch.unlink(missing_ok=True)
     if max(widths) - min(widths) > 1:
-        die("the track and the digits came out on different "
-            "cell widths\n"
-            "  ({}), so they would not share a grid.".format(
-                ", ".join(f"{n} {c:.1f}px" for n, (c, _) in cells.items())))
-    cell = sum(widths) / len(widths)
+        die(f"the panel's font ({panel_path}) is not monospace: its digits "
+            f"measure between {min(widths)} and {max(widths)} px.\n"
+            f"  The readout crops cells out of one strip, so they have to agree.")
+    # ...and no missing glyphs in anything the band can ever say.
+    captions = (BOX_TITLE, PROGRESS_TITLE, GRANTED_TEXT, DENIED_TEXT)
+    alphabet = "".join(sorted({c for cap in captions for c in cap if c != " "}))
+    probe = target / ".panel-alphabet.png"
+    render(alphabet, "#FFFFFF", probe, panel_path)
+    width, height = measure(probe)
+    tile = width / len(alphabet)
+    means = subprocess.run(
+        ["magick", str(probe), "-alpha", "extract",
+         "-crop", f"{round(tile)}x{height}", "+repage",
+         "-format", "%[fx:mean] ", "info:"],
+        capture_output=True, text=True, check=True).stdout.split()
+    blank = [c for c, mean in zip(alphabet, means) if float(mean) < 0.005]
+    probe.unlink(missing_ok=True)
+    if blank:
+        die(f"{panel_path} has no glyph for {' '.join(repr(c) for c in blank)}.\n"
+            f"  freetype draws a missing glyph as BLANK rather than as a box, so "
+            f"a caption would come\n  out with holes in it and nothing anywhere "
+            f"would say why. Respell it, or ship a face that has them.")
+    digit_w, row_height = measure(target / "digits.png")
+    cell = (digit_w + kerning) / len(ATLAS)
     # `cell` above is INFLATED by kerning -- correct for BOX_CELL_FRAC (which
     # decides how much of the panel's fixed on-screen width each glyph gets at
     # boot), but wrong for sizing the panel itself: box_w below is DEFINED as a
@@ -1110,6 +1332,14 @@ def splash_assets(target, font_path, line_hex):
     # the unkerned reference -- what `cell` would have measured without the
     # air -- and is what everything that sizes the box uses instead.
     pitch = cell - kerning
+
+    bar_w = int(round(BAR_CELLS * cell))
+    bars = " ".join(
+        f"rectangle {round(i * cell)},{0} {round(i * cell + pitch)},{row_height}"
+        for i in range(BAR_CELLS))
+    subprocess.run(["magick", "-size", f"{bar_w}x{row_height}", "xc:none",
+                    "-fill", f"#{DIALOG_HEX}", "-draw", bars, "-strip",
+                    str(target / "bar.png")], check=True)
 
     # Does the widest row (mask, or track+gap+digits, whichever needs more
     # cells) actually fit the interior once kerning's air is added back in?
@@ -1125,59 +1355,53 @@ def splash_assets(target, font_path, line_hex):
             f"BAR_GAP_CELLS + PCT_CELLS and KEY_CELLS both have to fit "
             f"BOX_CELLS.")
 
-    # One height for both, so one aspect describes them and the row cannot
-    # sit a pixel high. Padded rather than assumed equal: `label:` hands back
-    # a line box, and whether rows of blocks and digits produce
-    # the same one is a property of the font, not something to take on trust.
-    row_height = max(h for _, h in cells.values())
-    for name in inside:
-        subprocess.run(["magick", str(target / name), "-background", "none",
-                        "-gravity", "north",
-                        "-extent", f"{measure(target / name)[0]}x{row_height}",
-                        "-strip", str(target / name)], check=True)
+    # One height for the row, full stop: the track was drawn at the digits'
+    # own height, so there is nothing to pad and no second line box to agree
+    # with the first. The mask below shares it too.
 
     block_ink = ink(target / "bar.png")
 
-    # The typed circles: KEY_CELLS dots, DRAWN on this same `cell`/`row_height`
-    # grid rather than typeset -- see BLOCK's own comment for why no glyph in
-    # this font gives a clean circle. One magick call, one `circle` primitive
-    # per dot, each centred in its own cell. The dialog shows nothing until
-    # the first keystroke; the circles are only ever cropped out of this
-    # image a few cells at a time.
+    # The typed dashes: KEY_CELLS short horizontal marks, DRAWN on this same
+    # `cell`/`row_height` grid rather than typeset -- the way the film's own
+    # passphrase field answers keystrokes, a row of `-`, not a row of dots.
+    # One magick call, one `rectangle` primitive per dash, each centred in its
+    # own cell. The dialog shows nothing until the first keystroke; the dashes
+    # are only ever cropped out of this image a few cells at a time.
     key_w = int(round(KEY_CELLS * cell))
-    radius = pitch * mask_diameter / 2
-    dots = " ".join(
-        f"circle {i * cell + cell / 2},{row_height / 2} "
-        f"{i * cell + cell / 2 + radius},{row_height / 2}"
+    dash_w = int(round(cell * 0.55))
+    dash_h = max(4, int(round(row_height * 0.14)))
+    dashes = " ".join(
+        f"rectangle {i * cell + (cell - dash_w) / 2},{(row_height - dash_h) / 2} "
+        f"{i * cell + (cell + dash_w) / 2},{(row_height + dash_h) / 2}"
         for i in range(KEY_CELLS))
     subprocess.run(["magick", "-size", f"{key_w}x{int(row_height)}", "xc:none",
-                    "-fill", f"#{DIALOG_HEX}", "-draw", dots, "-strip",
+                    "-fill", f"#{DIALOG_HEX}", "-draw", dashes, "-strip",
                     str(target / "keydots.png")], check=True)
 
-    # Are the circles actually visible -- and still circles? Ask the PICTURE,
+    # Are the dashes actually visible -- and still dashes? Ask the PICTURE,
     # the same way every other guard in this function does: measure how much
     # of its cell it inks, against a full block.
     #
-    # TOO LITTLE, and `mask_diameter` drew nothing (or next to it) -- a
+    # TOO LITTLE, and the dash drew nothing (or next to it) -- a
     # passphrase prompt that does not react as you type, indistinguishable from
     # a dead keyboard on an encrypted disk at 7am.
     #
-    # TOO MUCH, and the dots touch or fill their cell, which puts the row of
+    # TOO MUCH, and the dashes touch or fill their cell, which puts the row of
     # solid marks back and undoes the entire point of drawing a mask rather
-    # than a block in the first place (see BLOCK's own comment).
-    dot_ink = ink(target / "keydots.png") * KEY_CELLS / BAR_CELLS
+    # than typesetting one.
+    dash_ink = ink(target / "keydots.png") * KEY_CELLS / BAR_CELLS
     if block_ink > 0:
-        share = dot_ink / block_ink
+        share = dash_ink / block_ink
         if share < 0.01:
-            die(f"mask_diameter={mask_diameter} draws next to nothing "
+            die(f"the mask dash draws next to nothing "
                 f"({share:.0%} of a full block's ink).\n"
                 f"  A passphrase prompt that does not react as you type is "
-                f"indistinguishable from a dead\n  keyboard. Grow mask_diameter.")
+                f"indistinguishable from a dead\n  keyboard. Grow the dash.")
         if share > 0.6:
-            die(f"mask_diameter={mask_diameter} inks {share:.0%} of a full "
+            die(f"the mask dash inks {share:.0%} of a full "
                 f"block.\n  A row of that reads as a progress bar rather than "
                 f"as typed characters, which is the\n  one thing this design "
-                f"exists to avoid. Shrink mask_diameter.")
+                f"exists to avoid. Shrink the dash.")
 
     # The placeholder row is gone -- the dialog shows nothing until the first
     # keystroke -- so a `keyline.png` left behind by an older derive must not
@@ -1188,23 +1412,23 @@ def splash_assets(target, font_path, line_hex):
     interior = BOX_CELLS * pitch
     pad = pitch                     # a cell of air either side of the content
     box_w = int(interior + pad * 2)
-    stroke = max(2, int(size * 0.045))
+    # The frame's own width, in bake pixels. 0.05: the reference's frame
+    # profiles at ~4-5 px true on a 922 px panel once the CRT bloom is
+    # discounted, and 5 px bakes to 3.4 -- visibly thinner side by side.
+    # 6 px bakes to ~4.1 there and ~2.6 at 1080p: the same thin rule, with
+    # enough ink to read as a rule rather than a suggestion.
+    stroke = max(2, int(size * 0.05))
     # The corner widgets, and the band's own proportions -- both MEASURED off
-    # the reference rather than guessed. A first pass kept the old rule's
-    # `size * 0.30` square and just padded a band around it, which came out a
-    # letterbox: a huge sliver of air around a small icon, and the whole box
-    # barely a fifth as tall as it is wide (aspect 0.19) against the
-    # reference's own ~0.33. The reference's own squares fill most of the
-    # band's height too (~70% of it, corner to corner) -- so the fix scales
-    # the WIDGET, not just the padding around it.
+    # the reference rather than guessed. ... (history in git.)
     #
-    # A second pass dialled this back to 0.28 because the panel ran off the
-    # bottom of the screen -- but that was `entry.y` sitting too low, not this
-    # aspect being too tall; DIALOG now lifts the panel off `entry.y` instead,
-    # which is the actual fix, so this goes back to the reference's own ratio.
-    # The runtime clamp in DIALOG stays regardless, for whatever panel this
-    # has not been measured against.
-    block = int(size * 0.84)        # the corner widgets' height
+    # Third pass, against the `enter password` frame rather than the blurrier
+    # RTF CONTROL close-ups: its squares profile at ~46 px on a 922 px panel
+    # with the band at ~100, i.e. less than half the band's height -- the
+    # close-ups read bigger through blur and perspective. 0.56 of size lands
+    # 67 px bake, 46 on screen. Same for the zoom's height; its WIDTH stays
+    # where it was (2.7 now, same ~180 px bake the reference profiles),
+    # because the reference's zoom is wide AND short, not a scaled square.
+    block = int(size * 0.56)        # the corner widgets' height
 
     # The title band. FILLED, the way an old window manager's title bar is --
     # not a rule with a caption-shaped hole knocked in it, which is what this
@@ -1218,37 +1442,46 @@ def splash_assets(target, font_path, line_hex):
 
     # The panel is sized to its CONTENT, not to the point size: a fixed multiple
     # of `size` gave a box with the mask row stranded in the top third and
-    # a hand's width of nothing under it. 3.0, not the 1.9 this started at, to
-    # match the reference's own content-to-band proportion once the band grew
-    # to its measured size -- 1.9 paired with the bigger band came out
-    # top-heavy, a wide band over a cramped mask row.
-    content_h = int(row_height * 3.0)
+    # a hand's width of nothing under it. 2.98, measured off the reference:
+    # its panel profiles at 2.78:1 wide, and with the band below (which the
+    # smaller widgets shortened) that lands the box on the same aspect.
+    content_h = int(row_height * 2.98)
     box_h = band_bottom + content_h
 
-    # ...and the row is centred on the INK, not on the line box. `label:` returns
-    # a full line box with room for ascenders and descenders, and the glyph inks
-    # only part of it -- so centring the box leaves the only thing anyone can
-    # see sitting noticeably high. Measured off the track, because blocks fill
-    # their cell and are therefore the honest extent of the row; the mask
-    # shares a baseline with them, so it lands where it should.
+    # ...and the row sits where the reference puts it: its ink starts 39%
+    # down the free space, not dead centre. `label:` returns a full line box
+    # with room for ascenders and descenders, and the glyph inks only part of
+    # it -- so placing the box leaves the only thing anyone can see wherever
+    # the box says, which the reference overrules: its dashes profile at 39%
+    # of the body, sitting high the way a text line does. Measured off the
+    # track, because blocks fill their cell and are therefore the honest
+    # extent of the row; the mask shares a baseline with them, so it lands
+    # where it should.
     trimmed = subprocess.run(["magick", str(target / "bar.png"), "-format", "%@",
                               "info:"], capture_output=True, text=True,
-                             check=True).stdout
+                              check=True).stdout
     ink_h, ink_y = (int(n) for n in re.match(
         r"\d+x(\d+)\+\d+\+(\d+)", trimmed).groups())
-    content_y = band_bottom + int((content_h - ink_h) / 2) - ink_y
+    content_y = band_bottom + int((content_h - ink_h) * 0.39) - ink_y
 
     corner_y0 = stroke + band_pad
     corner_y1 = corner_y0 + block
-    zoom_w = int(block * 1.8)       # the right widget: wider than tall
+    zoom_w = int(block * 2.7)       # the right widget: wide and short, as
+                                    # profiled -- same ~180 px bake as before
 
     for name, caption in (("box-key.png", BOX_TITLE),
                           ("box-bar.png", PROGRESS_TITLE),
                           ("box-granted.png", GRANTED_TEXT),
                           ("box-denied.png", DENIED_TEXT)):
         # Dark on the band, not the panel's usual light-on-dark -- the band
-        # is what inverts, the way the reference's title bar does.
-        render(caption, f"#{BAND_INK_HEX}", target / ".caption.png")
+        # is what inverts, the way the reference's title bar does. Tracked
+        # wide, the way the reference sets it: its caption spans three fifths
+        # of the panel, airy, while untracked pixels huddle at two. 0.50 of a
+        # cell between glyphs lands the span now the band is shallower (the
+        # height sizing below shrank the caption with it); the clamp below
+        # keeps the longest caption off the corner widgets either way.
+        render(caption, f"#{BAND_INK_HEX}", target / ".caption.png",
+               panel_path, kerning=int(round(cell * 0.50)))
         # Sized to the BAND's height, not to a fraction of its own natural
         # width: the old `* 62 // 100` scaled the caption against itself, so
         # it stayed the same small size while the band grew around it over
@@ -1257,11 +1490,25 @@ def splash_assets(target, font_path, line_hex):
         # caption, which very nearly fills the band top to bottom.
         caption_w, natural_h = measure(target / ".caption.png")
         caption_w = int(caption_w * (band_h * 0.75) / natural_h)
+        # ...and never wider than the band's usable span: the free run between
+        # the left widgets' right edge (pad + two blocks + a stroke) and the
+        # zoom widget's left edge (box_w - pad - zoom_w), less two strokes of
+        # breathing room a side. The old formula subtracted one block per side
+        # and let a tracked caption run under both widgets -- photographed
+        # touching them side by side with the reference.
+        free_left = pad + 2 * block + stroke + 2 * stroke
+        free_right = box_w - pad - zoom_w - 2 * stroke
+        caption_max = free_right - free_left
+        if caption_w > caption_max:
+            caption_w = caption_max
         subprocess.run(["magick", str(target / ".caption.png"), "-resize",
                         f"{caption_w}x", "-strip", str(target / ".caption.png")],
                        check=True)
         caption_h = measure(target / ".caption.png")[1]
-        left = (box_w - caption_w) // 2
+        # Centred in the FREE span, not in the box: the box's centre sits left
+        # of the free span's (two squares plus a gap outweigh the zoom), so
+        # centring in the box parks the caption against the left widgets.
+        left = (free_left + free_right - caption_w) // 2
         bottom, right = box_h - stroke, box_w - stroke
         subprocess.run([
             "magick", "-size", f"{box_w}x{box_h}", "xc:none",
@@ -1282,8 +1529,11 @@ def splash_assets(target, font_path, line_hex):
             # The corner widgets: hollow outlines sitting inside the band, its
             # own fill showing through the middle -- not the solid squares
             # this drew before, which is right on a bare rule but reads as a
-            # patch on a filled one.
-            "-strokewidth", str(max(1, stroke // 2)), "-stroke", f"#{BAND_INK_HEX}",
+            # patch on a filled one. 3 px floor, not 1: on the 0.30 panel a
+            # 1 px bake is 0.46 px on a 3072x1920 screen, i.e. gone, while 3 px
+            # is ~1.4 px -- the same hairline the eye expects, with enough ink
+            # to survive the downscale. Same shapes, same proportions.
+            "-strokewidth", str(max(3, stroke // 2)), "-stroke", f"#{BAND_INK_HEX}",
             "-draw", f"rectangle {pad},{corner_y0} {pad + block},{corner_y1}",
             "-draw", f"rectangle {pad + block + stroke},{corner_y0} "
                      f"{pad + block * 2 + stroke},{corner_y1}",
@@ -1297,8 +1547,8 @@ def splash_assets(target, font_path, line_hex):
     (target / ".caption.png").unlink(missing_ok=True)
 
     return {
-        # The boot lines set the type size for every mode; see the template.
-        "WIDEST_CELLS": max(line_cells["boot"]),
+        # The boot's pre lines set the type size for every mode; see the template.
+        "WIDEST_CELLS": max(line_cells["boot"][:PRE_COUNT]),
         "LINE_ASPECT": round(line_height / line_cell, 4),
         "LINE_CELLS": line_cells,
         "BOX_ASPECT": round(box_h / box_w, 4),
@@ -1306,8 +1556,15 @@ def splash_assets(target, font_path, line_hex):
         # meant to carry the extra air forward to boot time. See the `pitch`
         # comment above for why everything else here uses `pitch` instead.
         "BOX_CELL_FRAC": round(cell / box_w, 6),
+        # The row height's own fraction, of the box HEIGHT, never the width:
+        # the panel image is clamped vertically at boot while its width is
+        # not, so a width-based row would drift past the baked band when the
+        # clamp fires. See the mx_in_y/mx_in_h comment in the template.
+        # Pitch, never the kerned cell -- see that same comment for what
+        # kerning does stacked vertically.
+        "BOX_PITCH_FRAC": round(pitch / box_h, 6),
         "BOX_PAD_FRAC": round(pad / box_w, 6),
-        "BOX_ROW_FRAC": round(content_y / box_w, 6),
+        "BOX_ROW_FRAC": round(content_y / box_h, 6),
         "CELL_ASPECT": round(row_height / pitch, 4),
     }
 
@@ -1383,7 +1640,8 @@ def stage(target, colours, theme_dir):
     # font asked for by name is ignored.
     font = available_font()
     face = theme_dir / FONT_FILE
-    metrics = splash_assets(target, face, COLOUR_HEX or accent)
+    panel = theme_dir / PANEL_FONT_FILE
+    metrics = splash_assets(target, face, COLOUR_HEX or accent, panel)
 
     r, g, b = (int(background[i:i + 2], 16) / 255 for i in (0, 2, 4))
     script = (target / "omarchy.script").read_text()
@@ -1428,6 +1686,27 @@ def theme_colour(key, theme_dir):
     die(f"`{key}` is missing from colors.toml")
 
 
+def ensure_user_font(theme_dir):
+    """The face where derive-time fc-match and the preview can see it.
+
+    stage() bakes from the FILE, so the splash never depends on this -- but
+    available_font() (the CAPS LOCK label) and preview-plymouth.sh both
+    resolve the FAMILY, and both go quiet to the wrong face when it misses.
+    A file copied once into the user's fonts cannot miss afterwards.
+    """
+    src = theme_dir / FONT_FILE
+    if not src.is_file():
+        return  # splash_assets() below dies about this, with the path
+    dest_dir = Path.home() / ".local/share/fonts"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / Path(FONT_FILE).name
+    if not dest.is_file() or dest.read_bytes() != src.read_bytes():
+        shutil.copy2(src, dest)
+    if shutil.which("fc-cache"):
+        subprocess.run(["fc-cache", "-f", str(dest_dir)],
+                       check=False, capture_output=True)
+
+
 def main():
     stage_only = "--stage-only" in sys.argv
     # The one entry point that used to escape the die() treatment below: with
@@ -1451,6 +1730,10 @@ def main():
                theme_colour("green", theme_dir),
                theme_dir / "unlock.png")
 
+    # Before anything resolves the family: the caps label, the preview and,
+    # later, the mkinitcpio hook all go through fc-match, not through the file.
+    ensure_user_font(theme_dir)
+
     staging = Path(tempfile.mkdtemp(prefix=f"{SLUG}-plymouth."))
     try:
         font, face = stage(staging, colours, theme_dir)
@@ -1459,10 +1742,11 @@ def main():
             # What a designer wants to know. Somebody who picks a card in
             # Style > Unlock does not, so an install prints none of it.
             for mode in MODE_LINES:
-                steps = storyboard(mode)
+                steps, gate = storyboard(mode)
                 seconds = sum(frames for _, _, frames in steps) / FPS
                 print(f"  {THEME} [{mode}]: {len(steps)} steps, {seconds:.1f}s of "
-                      f"typing, {len(MODE_LINES[mode])} lines")
+                       f"typing, {len(MODE_LINES[mode])} lines"
+                       + (f", gate at step {gate}" if gate is not None else ""))
             print(f"  drawn in {face.name}, baked to PNG; {font!r} only for the "
                   f"CAPS LOCK label")
             print(f"  every size measured at boot, none baked in")
@@ -1474,7 +1758,7 @@ def main():
             print(f"  see it: tools/preview-plymouth.sh <scenario>")
             return
 
-        # The four privileged steps. sudo may have nowhere to ask for a
+        # The five privileged steps. sudo may have nowhere to ask for a
         # password -- from a hook, from an agent, from an editor's shell -- or
         # the answer may simply be no. A Python traceback is a terrible way to
         # say "you did not authenticate": it reads as a broken pack rather than
@@ -1489,6 +1773,15 @@ def main():
             # the placeholder row was dropped would sit here forever, and ride
             # along in every initramfs. The staged theme no longer carries it.
             subprocess.run(["sudo", "rm", "-f", str(TARGET / "keyline.png")],
+                           check=True)
+            # The text face, system-wide, BEFORE the initramfs is rebuilt: the
+            # hook resolves `Font=` with fc-match as root, and a face it cannot
+            # see comes out as the wrong font with nothing to say so.
+            subprocess.run(["sudo", "mkdir", "-p", str(SYS_FONT_DIR)],
+                           check=True)
+            subprocess.run(["sudo", "cp", str(face), str(SYS_FONT_DIR) + "/"],
+                           check=True)
+            subprocess.run(["sudo", "fc-cache", "-f", str(SYS_FONT_DIR)],
                            check=True)
             subprocess.run(["sudo", "plymouth-set-default-theme", THEME], check=True)
 

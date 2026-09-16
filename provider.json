@@ -54,12 +54,23 @@
     "theme": "omarchy-matrix",
     "name": "Omarchy Matrix",
     "description": "Omarchy's splash with the line from the start of the film.",
-    "//lines": "The four lines from the start of the film, in order.",
+    "//lines": "What is typed BEFORE the passphrase is answered, in order. Knock is last on purpose: in the film it lands with the knock at Neo's door, and here it lands with the prompt. `afterUnlock` below types once the passphrase is accepted.",
     "lines": [
       "Wake up, Neo...",
       "The Matrix has you...",
-      "Follow the white rabbit.",
       "Knock, knock, Neo."
+    ],
+    "//afterUnlock": [
+      "What is typed AFTER the passphrase is accepted, once boot proceeds.",
+      "The derived script holds the storyboard at the end of `lines` while a",
+      "passphrase dialog is up, and releases it from the unlock callback -- so",
+      "on an encrypted disk this line only ever starts once the disk is open.",
+      "On a disk with no passphrase there is no dialog to wait for, and the",
+      "storyboard simply plays through. Empty or absent keeps the old shape:",
+      "the boot lines, then progress, with no held gate."
+    ],
+    "afterUnlock": [
+      "Follow the white rabbit."
     ],
     "//modes": [
       "What is typed on the way OUT, keyed by the mode plymouthd was started",

@@ -55,12 +55,24 @@ mid-flight:
 
 ```
 boot        Wake up, Neo...            /  The Matrix has you...
-            Follow the white rabbit.   /  Knock, knock, Neo.
+            Knock, knock, Neo.         THEN, once the passphrase is answered:
+            Follow the white rabbit.
 
 shutdown    Goodbye, Mr. Anderson.     /  Unplug him.
 
 reboot      Déjà vu.                   /  They changed something.
 ```
+
+Knock is last before the prompt on purpose: in the film it lands with the
+knock at the door, and here it lands with the passphrase dialog. The script
+holds the storyboard there -- resting on the finished line, not on a blank --
+while a dialog is up, and the accepted-password path of the unlock callback
+releases it, so `Follow the white rabbit.` only ever starts once the disk is
+open. (Normal fires when the splash is first shown too, before any dialog, so
+only the accepted path opens the gate.) That ordering breaks
+the film's own (there `Follow` comes before `Knock`), deliberately: the boot
+is a narrative, first knocking, then entering. On a disk with no passphrase
+there is no dialog to wait for and the lines play straight through.
 
 The panel does not come to the exits. Nothing asks for a passphrase on the way
 out, so there is no dialog and no progress readout — just the words on black.
@@ -143,8 +155,18 @@ Details that explain the design, each of them forced by something:
   by shelling out to it -- so at boot a per-call font *family* is ignored and
   every `Image.Text` comes out in whatever single TTF the initramfs happens to
   hold. A theme cannot choose a typeface through text; it can only choose one
-  through pixels. So the four lines, the passphrase field, the track, its digits
-  and the panel are all pictures.
+   through pixels. So the typed lines, the passphrase field, the track, its digits
+   and the panel are all pictures. The track is drawn as rectangles rather
+   than typeset: neither face has a full block, so it is drawn on the digits'
+   own measured cell instead.
+- **There are two faces, and the difference is the point.** The typed boot
+  lines are Courier Prime, the typewriter serif of Neo's monitor. The panel's
+  own text -- band captions, progress digits -- is VT323, the chunky pixel
+  face of the film's dialogs (`enter password`, `RTF CONTROL`). At the panel's
+  on-screen size a fine serif downscales to uneven stems while chunky pixels
+  survive; the passphrase mask is drawn dashes for the same reason, the way
+  the film's field answers with `-`. Both faces ship in `fonts/` and both are
+  guarded at derive time (monospace cell, full glyph coverage).
 - **Which single TTF that is comes from `Font=` in the `.plymouth`.** The
   mkinitcpio hook resolves it with `fc-match` and copies it in as
   `/usr/share/fonts/Plymouth.ttf`, which is what `label-freetype` falls back to.
@@ -197,7 +219,7 @@ hiding `label-pango` and every font but the three the initramfs would have.
 |---|---|
 | `colors.toml` | The palette. Semantic, not `color0..15`. Includes the Hyprland border colours, which go through the template. |
 | `shell.{bar,menu,launcher,notifications}.toml` | Shell section overrides: they give the bar and the cards some relief, which otherwise all paint the same black. |
-| `backgrounds/` | The carousel. `0-pills.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: seven from the film, three not. |
+| `backgrounds/` | The carousel. `00-pills-hands.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: five frames from the film, six stylised. |
 | `live/` | The rain's still, `0-live-rain.png`: thumbnail, marker and fallback in one. It is not in the carousel, so the theme alone never offers it. The pack links it into Omarchy's folder for your own backgrounds of this theme, which Omarchy lists first, so a theme set starts on the rain. The plugin finds it by the `-live-` in its name. |
 | `unlock.png`, `preview-unlock.png` | The static boot mark: what Omarchy's own Style › Unlock installs for this theme, and its card there. With the pack, the same card installs the animation instead, where `logo.png` goes invisible and the lines are typed. |
 | `manifest.json`, `Service.qml`, `MatrixRain.qml`, `matrix.frag.qsb`, `glyphs.png` | The plugin. |
