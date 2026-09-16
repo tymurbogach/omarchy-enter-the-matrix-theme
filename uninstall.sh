@@ -135,7 +135,10 @@ if [[ -d /usr/share/fonts/omarchy-matrix ]]; then
     echo "  skipped — remove it later with: sudo rm -rf /usr/share/fonts/omarchy-matrix" >&2
   sudo fc-cache -f >/dev/null 2>&1 || true
 fi
-rm -f "$HOME/.local/share/fonts/CourierPrime-Regular.ttf"
+# Bold is current; Regular is what an older install of this pack left behind
+# (FONT_FILE changed from Regular to Bold), so both are taken back here.
+rm -f "$HOME/.local/share/fonts/CourierPrime-Bold.ttf" \
+      "$HOME/.local/share/fonts/CourierPrime-Regular.ttf"
 fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
 
 # `omarchy plugin remove` renames rather than deletes: every folder taken away

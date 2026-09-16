@@ -86,10 +86,18 @@ cell of the track floating on an empty screen with no panel behind it.
 cannot be told apart from a power off from inside the script, so there is no
 `halt` entry in `provider.json` -- it would be configuration that never runs.
 
-Two things follow from an exit being *short*. It lives until the machine stops,
-which is a couple of seconds, so the exits type half again as fast, hold for
-half as long, and start with no held black -- and even then, assume only the
-**first** line is ever seen, which is why the first line of each is the payoff.
+An exit lives until the machine stops, which is NOT a fixed number of seconds
+on this machine -- it varies real reboot to real reboot, sometimes by a lot.
+`pace()` still gives exits their own, faster rate than boot (type faster,
+hold less, no held black at the start), tuned to the one configuration
+actually confirmed, by eye, to show both exit lines in full on a real
+reboot -- not to a journal reading of the shutdown, which measures when
+systemd stops logging rather than when Plymouth's framebuffer actually goes
+away, and not to whatever slack a single successful run happened to leave
+after both lines finished (pushing further on that basis, once, cost the
+second line entirely on the very next reboot). Even so, assume only the
+**first** line is ever seen on a machine whose exit turns out to be short,
+which is why the first line of each is still the payoff.
 And the type size does not change: the cell every mode is drawn on comes from
 the longest **boot** line, so a shorter exit line is not blown up to fill the
 same width. `derive-plymouth.py` checks instead that no line of any mode runs

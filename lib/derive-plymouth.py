@@ -95,6 +95,19 @@ COLOUR = PROVIDER["plymouth"].get("color")
 COLOUR_HEX = ("".join(f"{round(channel * 255):02X}" for channel in COLOUR)
               if COLOUR else None)
 
+# The glow is not just a dimmer copy of the core: in the film's own stills the
+# CENTRE of a typed line overexposes toward white while the BLOOM around it
+# stays a saturated, teal-leaning green -- two colours, not one colour at two
+# opacities. Sampled directly off several reference frames (the brightest
+# pixel cluster in each -- the core -- sat within a few points of RGB
+# 170/208/194 every time; the mid-distance halo band sat around a 1:8:5
+# R:G:B ratio, i.e. green with a blue lean, not the theme's yellow-leaning
+# green). A provider that does not say gets the old behaviour, one colour for
+# both.
+GLOW_COLOUR = PROVIDER["plymouth"].get("glowColor")
+GLOW_COLOUR_HEX = ("".join(f"{round(channel * 255):02X}" for channel in GLOW_COLOUR)
+                    if GLOW_COLOUR else None)
+
 # The boxed prompt is a different colour from the lines, on purpose: in the film
 # the terminal runs green and the boxed prompt is a pale aqua. A provider that
 # does not say gets the one colour, so nothing older changes shape.
@@ -112,6 +125,16 @@ PROGRESS_TITLE = PROVIDER["plymouth"].get("progressTitle", "booting")
 # black, so it keeps the same blue bias as the dialog colour instead of
 # reading as a second, unrelated ink.
 BAND_INK_HEX = "04121A"
+
+# The band's own fill overexposes toward white, the same way a typed line's
+# CORE does against its halo (see COLOUR above) -- it is not just the dialog
+# colour laid flat. A colour histogram of the reference panel found its single
+# most common bright pixel (the band, by far the largest lit area) at
+# #D5F9FA, distinctly closer to white than the border/dash tone that measured
+# DIALOG_COLOUR against (~#AADAE5). Using DIALOG_HEX for the band too, as an
+# earlier version of this did, left every lit element -- band, frame, dashes
+# -- at one flat tone, which is what read as washed out next to the reference.
+BAND_FILL_HEX = "D5F9FA"
 
 # The one-shot feedback, worn by the panel's own title band -- each takes it
 # over for a beat, then hands it back. GRANTED is a real signal (it plays
@@ -136,7 +159,12 @@ FONT = "Courier Prime"
 # splash comes out in the wrong face with nothing anywhere to say so. A file in
 # the theme cannot miss. It is also why the typed lines are baked: at boot there
 # is no fc-match at all, so a per-call family is ignored outright.
-FONT_FILE = "fonts/CourierPrime-Regular.ttf"
+#
+# BOLD, not Regular: next to the film's own stills, Regular's strokes read as
+# thin and the letters as narrow/stretched -- the reference is a blocky,
+# compact typewriter weight, not a light one. Same family, same metrics
+# (both ship from the same upstream project), so nothing else here changes.
+FONT_FILE = "fonts/CourierPrime-Bold.ttf"
 
 # ...and the face the PANEL's own text is drawn in: the band captions and the
 # progress digits. A chunky pixel face, the way the film draws its dialogs --
@@ -156,40 +184,103 @@ ATLAS = "0123456789% "
 
 # --- the animation, in frames of the 50 fps refresh omarchy.script assumes ---
 FPS = 50
-FRAMES_PER_CHAR = 5         # -> 10 keystrokes a second
-OPEN_PAUSE = 60             # black, before the first letter
-HOLD_PAUSE = 120            # once a line is complete
-GAP_PAUSE = 60              # cleared screen, before the next line
+FRAMES_PER_CHAR = 4         # -> 12.5 keystrokes a second
+OPEN_PAUSE = 45             # black, before the first letter
+HOLD_PAUSE = 90             # once a line is complete
+GAP_PAUSE = 45              # cleared screen, before the next line
 #
-# At 10 keystrokes a second the three pre lines take ~17 s, the tail another
-# 5 s, and the storyboard plays ONCE -- `mx_advance` returns for good at the last step, it does not loop. Only
-# 3.3 s of the splash is deterministic (plymouth-start to plymouth-quit); all
-# the rest is the initrd phase, for as long as the disk's passphrase takes. So
-# on a machine that boots fast, or unlocks fast, the later lines are simply
-# never reached. That is the accepted price of a readable pace: the film's
-# terminal types slowly, and 25 keystrokes a second read as a blur.
+# At 12.5 keystrokes a second the three pre lines take ~14 s, the tail another
+# 4 s, and the storyboard plays ONCE -- `mx_advance` returns for good at the last step, it does not loop. Only
+# a few seconds of the splash is deterministic (plymouth-start to
+# plymouth-quit); all the rest is the initrd phase, for as long as the disk's
+# passphrase takes. So on a machine that boots fast, or unlocks fast, the
+# later lines are simply never reached. This was tuned down from an original
+# 10 keystrokes a second/60-120-60 pause set once a real reboot showed the
+# whole animation could stand to feel snappier throughout, boot included --
+# there is no hard deadline here, just a faster, still-readable pace.
 
-# The way out is not the way in, and it is much shorter. A boot's splash lives
-# for as long as the disk takes to unlock; an exit's lives until the machine
-# stops, which on this laptop is a couple of seconds. At the boot pace the first
-# line would still be typing itself when the power went.
+# A real exit's window is NOT a fixed number on this machine -- it varies
+# reboot to reboot, sometimes by a lot, and every attempt below to solve for
+# an exact fit got contradicted by the next real test:
 #
-# So: no held black at the start, two and a half times the keystroke rate, and
-# a hold long enough to read once rather than to sit on. The first line of
-# each exit is still the payoff -- a real shutdown/reboot splash lives only a
-# couple of seconds, so no pacing guarantees both lines on every machine --
-# but the pauses below are tightened until a two-line exit plays in ~2.9-3.3 s
-# (measured: reboot 2.9s, shutdown 3.3s), which gives the second line a real
-# chance instead of none.
-EXIT_FRAMES_PER_CHAR = 2    # -> ~25 keystrokes a second: fast, still legible
-EXIT_OPEN_PAUSE = 5
-EXIT_HOLD_PAUSE = 20
-EXIT_GAP_PAUSE = 8
+# 1. keystroke_frames() started applying to every mode the day it was added
+#    for boot, with the exits never re-tuned for its added weight on
+#    capitals and punctuation -- a real reboot cut "They changed something."
+#    off mid-word even though nobody had touched a number below.
+# 2. The OLD flat numbers (3/10/50/25, no keystroke_frames) gave 4.6s, and a
+#    real reboot showed NEITHER exit line -- worse.
+# 3. `journalctl -b -1 | grep -i plymouth` for that reboot -- "Started Show
+#    Plymouth Reboot Screen" to journald's last line -- read as a 2s BUDGET
+#    and tuned to fit under it (1.6s design). Still dead air on the next
+#    reboot: that reading is journald's own shutdown, not the screen's --
+#    journald stops logging before Plymouth's framebuffer actually goes away.
+# 4. Doubling to 3.2s design on the theory the true window was ~2x the
+#    journal figure. Still dead air, timed by eye this time, not journald.
+# 5. Human typing restored for exits, pushed to 5.0s/5.4s design (2 frames a
+#    char, 20/60/20 pauses). This is the one that WORKED: both lines shown in
+#    full, the user's own eye put ~4s of dead air after -- generous, not
+#    tight.
+# 6. Reading that spare 4s as "room to push further" and reusing BOOT's own
+#    slower pace outright (4 frames a char, 45/90/45 -- 8.1s/8.7s design).
+#    The very next real reboot showed ONLY "Deja vu." -- not even the start
+#    of line two. Two lines using less real time (step 5) outlived a slower
+#    pace using more (step 6): the window that reboot was simply shorter than
+#    the one before it, not longer.
+#
+# So (5) is what ships: it is the ONLY configuration that has actually shown
+# both full lines on a real reboot on this machine. It is deliberately NOT
+# tuned to whatever margin that one attempt happened to leave -- (6) shows
+# exactly how that goes wrong. If a real reboot ever cuts a line short again,
+# that is real evidence pace() is too slow; a report of leftover dead air
+# after both lines complete, on its own, is not evidence pace() is too fast --
+# the window moves, and this configuration already has a demonstrated pass.
+#
+# Update: the user timed the real window directly -- ~4s, total, screen-on to
+# screen-change. Every estimate above (journal reading, "spare time" after a
+# pass) was a proxy for this number; this is the number itself. Tuned to
+# 3.1s/3.5s, under it with real margin instead of against it exactly.
+#
+# Update 2: once both lines finish typing, mx_tick() stops advancing and the
+# last frame just sits there -- EXIT_HOLD_PAUSE on the FINAL line changes
+# nothing on screen, because nothing repaints after it. So the ~1s of real
+# window still left after 3.1s/3.5s read as dead air, not as anything typed.
+# The only knob that turns unused margin into visible motion instead of a
+# freeze is the per-character rate. Raised one frame/char -- still well short
+# of (6)'s 8.1s design, the one that got a real reboot to cut the second line
+# -- to spend more of the same ~4s budget typing rather than frozen.
+#
+# Update 3: several real reboots and shutdowns confirmed the window is not
+# just short, it is genuinely RANDOM run to run -- one shutdown showed only
+# "Goodbye, Mr. Anderson.", never reaching line two, no different from what
+# the comments above already expected. Chasing a real-seconds target is
+# therefore pointless; the only thing left to optimise is the SCRIPTED half,
+# so none of it is spent on anything that is not typing or a brief, real
+# read. Three pauses were pure design overhead with no reading or typing
+# happening on screen, and all three came down:
+#   * EXIT_OPEN_PAUSE 5->0: a black beat before the first key has no purpose
+#     on an exit -- there is no "screen waking up" beat to sell here, only a
+#     machine already mid-shutdown.
+#   * EXIT_GAP_PAUSE 6->2: the clear-to-next-line cut (see storyboard's own
+#     "the screen CLEARS before the next one") is a real beat from the film's
+#     own shape, not filler -- kept, but cut to the shortest span that still
+#     reads as a cut rather than a lingering blank.
+#   * EXIT_HOLD_PAUSE 25->18: still a beat to read line one, just not padded
+#     past what a one-line phrase needs.
+# Every one of those frames now goes to typing instead: less padding at the
+# same per-char rate means MORE of a short, random window is spent moving
+# rather than idle -- strictly better odds for line two, not worse. New
+# design totals (from --stage-only): reboot 3.0s, shutdown 3.5s. Still not a
+# real-reboot pass in this exact shape; if a line gets cut short, that is the
+# signal to back EXIT_FRAMES_PER_CHAR down, same as every entry above.
+EXIT_FRAMES_PER_CHAR = 3   # -> ~16.7 keystrokes a second: still brisk
+EXIT_OPEN_PAUSE = 0        # no held black -- straight into the first key
+EXIT_HOLD_PAUSE = 18       # 0.36s -- enough to read one short line, no more
+EXIT_GAP_PAUSE = 2         # 0.04s -- a cut, not a pause
 
 # How long the one-shot feedback holds the passphrase row before handing it
 # back -- to the progress track for GRANTED, to an empty field for DENIED.
-GRANTED_HOLD = 60           # 1.2s
-DENIED_HOLD = 60            # 1.2s
+GRANTED_HOLD = 45           # 0.9s
+DENIED_HOLD = 45            # 0.9s
 
 # --- the phosphor halo -------------------------------------------------------
 # The film's monitor is not flat ink: each glyph carries a soft halo, a few
@@ -202,19 +293,70 @@ DENIED_HOLD = 60            # 1.2s
 # the lines read flat. The first attempt at wider, 0x18, measured wrong: its
 # cut through a glyph falls only 109 to ~70-90 across 60 px of bake, a flat
 # fog with no bright edge anywhere -- neighbouring halos merge into one haze
-# instead of one bleed per letter. 0x8 keeps the gradient: 163 beside the ink
-# falling to ~15 within 48 px of bake, i.e. a hot edge that decays outward,
-# the way the reference stills bloom. 0.7 opacity keeps that edge present
-# without washing the core out. Single layer on purpose: Plymouth sprites
-# have opacity only, no additive blend, so a second tighter inner halo stays
-# in reserve for if this still reads weak next to the reference, not shipped
-# on a guess.
-LINE_GLOW_BLUR = "0x8"      # bake pixels at size=120; reads as bleed on screen
-LINE_GLOW_OPACITY = 0.7     # halo sprite opacity under the opaque core
+# instead of one bleed per letter. 0x8 kept the gradient (a hot edge that
+# decays outward) but next to the film's own stills it still read thin: the
+# reference bloom is both a bright rim AND a wide soft spread, and one blur
+# radius can only give one or the other -- push it wide enough for the
+# spread and the rim goes flat, exactly what 0x18 showed.
+#
+# So this is the "second tighter inner halo" the note above used to leave in
+# reserve: two blurs of the SAME crisp line, baked and added together (IM's
+# `plus` composite, not Plymouth's -- the sprite still only ever gets ONE
+# flat image, Plymouth has no runtime blend). The tight pass keeps the hot
+# edge close to the ink; the wide pass, dimmed first so it reads as haze and
+# not a second core, carries the spread the single-radius version lacked.
+#
+# Update: 0x20 (sigma 32) was tuned by eye against the word's OUTER silhouette
+# and never checked against a letter's INSIDE. A bowl like the one in `a` or
+# `o` is a few dozen px wide at this bake size, and BOLD (see FONT_FILE) makes
+# it narrower still -- a blur anywhere near that wide bridges straight across
+# it, so the counter reads as a filled blob instead of a hole. Measured
+# against the actual baked core (`Matrix`, the tightest bowls in the boot
+# lines): RADIUS is what closes a bowl -- 0x11/0x12 filled it outright, 0x9
+# left it faint but still open. So the wide pass's radius came down to 0x9,
+# the tight pass to 0x3 to stay proportionate, and both stayed there.
+#
+# Update 2: at 0x9, WEIGHT is the other knob, and 0.35 undershot -- next to
+# the film's stills the whole thing read flat, not just the bowls. 0.5 is
+# the highest weight that still leaves `a` and `o` fully open at 0x9; above
+# that the bowl starts filling again even though the radius did not change.
+# Radius decides WHETHER a bowl can fill, weight decides HOW MUCH of that
+# filling actually shows -- both matter, and both were undershot the first
+# time this got corrected.
+#
+# Update 3: pushed past that ceiling on purpose, to 0.6 -- asked for more
+# bloom than 0.5 gives, accepting that a bowl reads a little softer for it.
+#
+# Update 4: a real reboot photo (grey-washed by the camera, but the bloom
+# itself was plainly still thin next to the reference) showed 0.6/0x9 was
+# STILL undershooting the spread, and that radius/weight were never really
+# the right knobs to trade against a bowl at all -- they were the only ones
+# available. A plain blur cannot tell "just outside the ink" from "inside a
+# small hole surrounded by ink"; it is the same operation everywhere, so
+# widening it always cost a bowl something. A morphological CLOSE can tell
+# them apart: at a radius that bridges a counter but not the much wider gap
+# between two letters, `close(glow_source) - glow_source` is a mask of ONLY
+# the counters. The wide pass is multiplied by the inverse of that mask (see
+# the bake loop below), so it can bloom as generously as the word's outside
+# wants without ever touching a bowl again -- radius and weight are back to
+# being tuned against the OUTSIDE only, the way the very first attempt at
+# this assumed they could be.
+LINE_GLOW_BLUR = "0x4"          # inner: tight, keeps the bright edge on the ink
+LINE_GLOW_BLUR_WIDE = "0x18"    # outer: the wide, soft ambient bloom
+LINE_GLOW_WIDE_WEIGHT = 0.9     # outer dimmed before adding: haze, not a core
+LINE_GLOW_COUNTER_GUARD = 8     # Close radius: bridges a bowl, not a letter gap
+LINE_GLOW_OPACITY = 1.0         # combined halo sprite opacity under the core
 
 
 def pace(mode):
-    """Frames per character, and the three pauses, for one Plymouth mode."""
+    """Frames per character, and the three pauses, for one Plymouth mode.
+
+    Exit briefly used boot's own numbers outright (see the comment above
+    EXIT_FRAMES_PER_CHAR for why that was tried and what a real reboot showed
+    about it). EXIT_* is its own, separately-tuned pace again -- the one
+    configuration actually confirmed, on this machine, to show both exit
+    lines in full.
+    """
     if mode == "boot":
         return FRAMES_PER_CHAR, OPEN_PAUSE, HOLD_PAUSE, GAP_PAUSE
     return (EXIT_FRAMES_PER_CHAR, EXIT_OPEN_PAUSE, EXIT_HOLD_PAUSE,
@@ -267,7 +409,10 @@ def keystroke_frames(char, prev, pos, base, line_seed=0):
 # whatever the panel and whatever the font's metrics turn out to be.
 TEXT_X = 0.055              # left margin of Neo's terminal
 TEXT_Y = 0.085              # and how far down it starts
-TEXT_WIDTH = 0.42           # what the longest line takes up
+# 0.42 read too big on a real boot, next to the film -- this was an on-screen
+# judgement call, not a measurement, and 0.42 was simply too generous a guess.
+# Brought down to a more typewriter-console size, not a billboard.
+TEXT_WIDTH = 0.32           # what the longest line takes up
 KEY_CELLS = 21              # passphrase slots, at most. 21 on purpose: it
                             # is exactly the progress row's own width (16
                             # track blocks + a gap + 4 digits), so both rows
@@ -386,10 +531,14 @@ def storyboard(mode="boot"):
     gate = None
     for index, phrase in enumerate(pre):
         for n in range(1, len(phrase) + 1):
+            # The human hand, every mode: a flat per-char rate reads as a
+            # dot-matrix printer, not someone typing. Exits keep their own,
+            # faster base rate from pace() -- only the per-character jitter
+            # is shared code, not the pace itself.
             char = phrase[n - 1]
             prev = phrase[n - 2] if n > 1 else ""
-            steps.append((index, n, keystroke_frames(char, prev, n - 1,
-                                                     per_char, index)))
+            frames = keystroke_frames(char, prev, n - 1, per_char, index)
+            steps.append((index, n, frames))
         steps.append((index, len(phrase), hold_pause))
         if index != len(pre) - 1 or post:
             steps.append((index, 0, gap_pause))
@@ -1128,7 +1277,7 @@ def dialog_block(metrics):
         PCT_TABLE=table, PCT_SPRITES=sprites, PCT_SHOW=show, PCT_PAINT=paint)
 
 
-def splash_assets(target, font_path, line_hex, panel_path):
+def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     """Everything the splash draws, baked to PNG here rather than typeset there.
 
     At boot there is no fc-match, so `label-freetype` ignores any font family
@@ -1158,6 +1307,7 @@ def splash_assets(target, font_path, line_hex, panel_path):
         die(f"the panel's font is missing: {panel_path}\n"
             f"  It ships with the theme, in {PANEL_FONT_FILE}. "
             f"Re-install the theme.")
+    glow_hex = glow_hex or line_hex
 
     size = 120                      # generous: everything is only scaled DOWN
 
@@ -1205,12 +1355,69 @@ def splash_assets(target, font_path, line_hex, panel_path):
                 f"type.")
         line_cells[mode] = [len(line) for line in lines]
         for index, line in enumerate(lines):
-            render(line, f"#{line_hex}", target / f"line-{mode}-{index}.png")
-            subprocess.run(
-                ["magick", str(target / f"line-{mode}-{index}.png"),
-                 "-blur", LINE_GLOW_BLUR,
-                 "-strip", str(target / f"lineglow-{mode}-{index}.png")],
-                check=True)
+            core = target / f"line-{mode}-{index}.png"
+            render(line, f"#{line_hex}", core)
+            # The glow is baked from its OWN colour source, not from `core`:
+            # same glyph shapes (so the crop math below still lines up cell
+            # for cell), different ink, so the bloom can be a more saturated
+            # green than the overexposed-white core sitting on top of it.
+            glow_source = target / f".glow-source-{mode}-{index}.png"
+            render(line, f"#{glow_hex}", glow_source)
+            inner = target / f".glow-inner-{mode}-{index}.png"
+            outer = target / f".glow-outer-{mode}-{index}.png"
+            mask = target / f".glow-mask-{mode}-{index}.png"
+            subprocess.run(["magick", str(glow_source), "-blur", LINE_GLOW_BLUR,
+                             "-strip", str(inner)], check=True)
+            subprocess.run(["magick", str(glow_source), "-blur", LINE_GLOW_BLUR_WIDE,
+                             "-evaluate", "multiply", str(LINE_GLOW_WIDE_WEIGHT),
+                             "-strip", str(outer)], check=True)
+            # A wide-enough blur to bloom convincingly ALSO bridges a small
+            # enclosed counter (the bowl in `a`, `o`, `e`) -- it cannot tell
+            # "just outside the ink" from "inside a small hole surrounded by
+            # ink", because plain blur is the same operation everywhere. A
+            # morphological CLOSE can tell them apart: at a radius that
+            # bridges a counter but not the much wider gap between two
+            # letters, closing the alpha fills the counter and leaves the
+            # rest of the silhouette alone -- so the closed alpha, inverted,
+            # is white (keep) everywhere except the counters (zero). The wide
+            # pass is masked by that, so it can bloom as generously as the
+            # word's outside wants without ever washing out a bowl -- the
+            # tight pass is left alone; at its radius it was never wide
+            # enough to bridge one in the first place.
+            #
+            # Plymouth sprites want STRAIGHT alpha, and Porter-Duff `SrcIn`
+            # -- the only IM compose that multiplies two alpha channels
+            # instead of unioning them -- hands back PREMULTIPLIED colour.
+            # So `SrcIn` runs once just to get the right alpha (`alpha_src`,
+            # colour discarded), and CopyAlpha grafts that alpha back onto
+            # the wide pass's own, still-straight colour.
+            mask_rgba = target / f".glow-mask-rgba-{mode}-{index}.png"
+            alpha_src = target / f".glow-alpha-src-{mode}-{index}.png"
+            w, h = measure(glow_source)
+            subprocess.run(["magick", str(glow_source), "-channel", "A",
+                             "-morphology", "Close",
+                             f"Disk:{LINE_GLOW_COUNTER_GUARD}",
+                             "-separate", "+channel", "-negate",
+                             str(mask)], check=True)
+            subprocess.run(["magick", "-size", f"{w}x{h}", "xc:white",
+                             str(mask), "-compose", "CopyAlpha", "-composite",
+                             str(mask_rgba)], check=True)
+            subprocess.run(["magick", str(mask_rgba), str(outer), "-compose",
+                             "SrcIn", "-composite", str(alpha_src)],
+                            check=True)
+            subprocess.run(["magick", str(outer), str(alpha_src), "-compose",
+                             "CopyAlpha", "-composite", str(outer)],
+                            check=True)
+            subprocess.run(["magick", str(outer), str(inner), "-compose", "plus",
+                             "-composite", "-strip",
+                             str(target / f"lineglow-{mode}-{index}.png")],
+                            check=True)
+            glow_source.unlink()
+            inner.unlink()
+            outer.unlink()
+            mask.unlink()
+            mask_rgba.unlink()
+            alpha_src.unlink()
         sizes = [measure(target / f"line-{mode}-{index}.png")
                  for index in range(len(lines))]
         units += [w / c for (w, _), c in zip(sizes, line_cells[mode])]
@@ -1468,6 +1675,12 @@ def splash_assets(target, font_path, line_hex, panel_path):
     corner_y1 = corner_y0 + block
     zoom_w = int(block * 2.7)       # the right widget: wide and short, as
                                     # profiled -- same ~180 px bake as before
+    # The two LEFT widgets do not touch: the reference profiles real black
+    # between them, about a third of one square's own width. The first
+    # version butted them against one stroke's worth of air (the frame's own
+    # width, reused because it was already in scope) and photographed them
+    # sharing an edge, which reads as one divided square rather than two.
+    corner_gap = max(stroke, int(block * 0.35))
 
     for name, caption in (("box-key.png", BOX_TITLE),
                           ("box-bar.png", PROGRESS_TITLE),
@@ -1491,12 +1704,12 @@ def splash_assets(target, font_path, line_hex, panel_path):
         caption_w, natural_h = measure(target / ".caption.png")
         caption_w = int(caption_w * (band_h * 0.75) / natural_h)
         # ...and never wider than the band's usable span: the free run between
-        # the left widgets' right edge (pad + two blocks + a stroke) and the
-        # zoom widget's left edge (box_w - pad - zoom_w), less two strokes of
-        # breathing room a side. The old formula subtracted one block per side
-        # and let a tracked caption run under both widgets -- photographed
+        # the left widgets' right edge (pad + two blocks + their own gap) and
+        # the zoom widget's left edge (box_w - pad - zoom_w), less two strokes
+        # of breathing room a side. The old formula subtracted one block per
+        # side and let a tracked caption run under both widgets -- photographed
         # touching them side by side with the reference.
-        free_left = pad + 2 * block + stroke + 2 * stroke
+        free_left = pad + 2 * block + corner_gap + 2 * stroke
         free_right = box_w - pad - zoom_w - 2 * stroke
         caption_max = free_right - free_left
         if caption_w > caption_max:
@@ -1512,8 +1725,9 @@ def splash_assets(target, font_path, line_hex, panel_path):
         bottom, right = box_h - stroke, box_w - stroke
         subprocess.run([
             "magick", "-size", f"{box_w}x{box_h}", "xc:none",
-            # The band, filled, full width, top edge to the divider.
-            "-fill", f"#{DIALOG_HEX}", "-stroke", "none",
+            # The band, filled, full width, top edge to the divider. Its own
+            # tone, not the frame's -- see BAND_FILL_HEX.
+            "-fill", f"#{BAND_FILL_HEX}", "-stroke", "none",
             "-draw", f"rectangle {stroke},{stroke} {right},{band_bottom}",
             # The frame: one rectangle for the whole panel, plus the divider
             # under the band. `-fill none` is deliberate here -- an earlier
@@ -1535,8 +1749,8 @@ def splash_assets(target, font_path, line_hex, panel_path):
             # to survive the downscale. Same shapes, same proportions.
             "-strokewidth", str(max(3, stroke // 2)), "-stroke", f"#{BAND_INK_HEX}",
             "-draw", f"rectangle {pad},{corner_y0} {pad + block},{corner_y1}",
-            "-draw", f"rectangle {pad + block + stroke},{corner_y0} "
-                     f"{pad + block * 2 + stroke},{corner_y1}",
+            "-draw", f"rectangle {pad + block + corner_gap},{corner_y0} "
+                     f"{pad + block * 2 + corner_gap},{corner_y1}",
             "-draw", f"rectangle {box_w - pad - zoom_w},{corner_y0} "
                      f"{box_w - pad},{corner_y1}",
             "-strip", str(target / name)], check=True)
@@ -1641,7 +1855,8 @@ def stage(target, colours, theme_dir):
     font = available_font()
     face = theme_dir / FONT_FILE
     panel = theme_dir / PANEL_FONT_FILE
-    metrics = splash_assets(target, face, COLOUR_HEX or accent, panel)
+    metrics = splash_assets(target, face, COLOUR_HEX or accent, panel,
+                            GLOW_COLOUR_HEX)
 
     r, g, b = (int(background[i:i + 2], 16) / 255 for i in (0, 2, 4))
     script = (target / "omarchy.script").read_text()
@@ -1700,6 +1915,15 @@ def ensure_user_font(theme_dir):
     dest_dir = Path.home() / ".local/share/fonts"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / Path(FONT_FILE).name
+    # A weight change (Regular -> Bold, or back) leaves the OLD file behind --
+    # cp never removes what it does not overwrite. Both weights sitting in a
+    # directory every app on the desktop can see is worse than one: whichever
+    # of them fc-match's own default-style preference happens to favour is
+    # what the desktop gets, not necessarily what FONT_FILE names now. Only
+    # the current file belongs here.
+    for stale in dest_dir.glob(f"{Path(FONT_FILE).stem.split('-')[0]}-*.ttf"):
+        if stale != dest:
+            stale.unlink()
     if not dest.is_file() or dest.read_bytes() != src.read_bytes():
         shutil.copy2(src, dest)
     if shutil.which("fc-cache"):
@@ -1779,6 +2003,15 @@ def main():
             # see comes out as the wrong font with nothing to say so.
             subprocess.run(["sudo", "mkdir", "-p", str(SYS_FONT_DIR)],
                            check=True)
+            # Same reasoning as ensure_user_font(): a weight change must not
+            # leave the old one riding along, system-wide, for every app that
+            # asks fontconfig for this family to find.
+            family_prefix = Path(FONT_FILE).stem.split("-")[0]
+            subprocess.run(
+                ["sudo", "find", str(SYS_FONT_DIR), "-maxdepth", "1",
+                 "-name", f"{family_prefix}-*.ttf",
+                 "!", "-name", Path(FONT_FILE).name, "-delete"],
+                check=True)
             subprocess.run(["sudo", "cp", str(face), str(SYS_FONT_DIR) + "/"],
                            check=True)
             subprocess.run(["sudo", "fc-cache", "-f", str(SYS_FONT_DIR)],

@@ -73,6 +73,14 @@
 #     photograph a half-typed passphrase.
 #   * anything to do with modifier STATE, Plymouth.GetCapslockState() included:
 #     a pty has no modifiers.
+#   * real seconds. derive-plymouth.py's typing pace assumes omarchy.script's
+#     50 fps refresh; this X11 window is not vsync-capped to it, and the
+#     script's own frame counter (mx_frame) has been measured advancing at
+#     upwards of 100+ steps a real second here even on a 60Hz panel -- 2x or
+#     more faster than the design math. A step table timed at N design
+#     seconds can finish typing in well under N real seconds in this preview.
+#     Judge TEXT and MOTION here (does it read as typing, does a line clip);
+#     judge SECONDS only from a real boot/shutdown/reboot, timed by eye.
 #   * a clean black backdrop. The X11 window is drawn with an alpha channel,
 #     so wherever the splash paints nothing the desktop behind it shows
 #     faintly through -- and grim photographs what the compositor composited,

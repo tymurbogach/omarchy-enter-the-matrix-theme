@@ -1,6 +1,6 @@
 # fonts/
 
-`CourierPrime-Regular.ttf` — Courier Prime, the typewriter serif of Neo's
+`CourierPrime-Bold.ttf` — Courier Prime, the typewriter serif of Neo's
 monitor in the film (`Wake up, Neo...`, `The Matrix has you...`).
 
 It is here rather than named as a dependency because `derive-plymouth.py` bakes
@@ -16,6 +16,11 @@ cells agree to 0.3 px across the typed lines (the crop guard allows 1 px),
 and it carries every character in use, accents included (`Déjà vu.`).
 What it does not carry is `█`, so the progress track is drawn as rectangles
 rather than typeset; see `splash_assets()`.
+
+BOLD, not Regular: next to the film's own stills the Regular weight's strokes
+read as thin and the letters as narrow, where the reference is a blocky,
+compact typewriter face. Same upstream project, same metrics, so nothing
+else about the guards above changed when the weight did.
 
 Copied **unmodified**, which is what OFL 1.1 permits. `LICENSE.txt` is the
 licence as shipped with it.
