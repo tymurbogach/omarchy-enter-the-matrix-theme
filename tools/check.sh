@@ -163,8 +163,9 @@ for path in (
 ):
     if not path.is_file():
         bad(f"early backlight source is missing: {path.relative_to(root)}")
-if 'HOOKS+=(omarchy-matrix-backlight)' not in (root / "initcpio/99-omarchy-matrix-backlight.conf").read_text():
-    bad("the early backlight hook is not added to mkinitcpio")
+initcpio_config = (root / "initcpio/99-omarchy-matrix-backlight.conf").read_text()
+if 'omarchy-matrix-backlight' not in initcpio_config or 'plymouth' not in initcpio_config:
+    bad("the early backlight hook is not ordered before Plymouth")
 for needle in (
     'BOOT_BACKGROUND_HEX = "000000"',
     'CRT_SCANLINE_OPACITY = 0.12',
@@ -214,10 +215,16 @@ check_repo_hygiene() {
 
 check_early_backlight() {
   section "early initramfs backlight hook"
-  local tmp hook
+  local tmp hook order
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' RETURN
   hook="$ROOT/initcpio/hooks/omarchy-matrix-backlight"
+  order=$(bash -c 'HOOKS=(base udev plymouth keyboard); source "$1"; printf "%s " "${HOOKS[@]}"' \
+    bash "$ROOT/initcpio/99-omarchy-matrix-backlight.conf")
+  [[ $order == 'base udev omarchy-matrix-backlight plymouth keyboard ' ]] || {
+    fail "the early backlight hook is not immediately before Plymouth: [$order]"
+    return 0
+  }
   mkdir -p "$tmp/backlight/intel_backlight"
   printf '100\n' >"$tmp/backlight/intel_backlight/max_brightness"
   printf '1\n' >"$tmp/backlight/intel_backlight/brightness"
