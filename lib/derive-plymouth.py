@@ -126,15 +126,11 @@ PROGRESS_TITLE = PROVIDER["plymouth"].get("progressTitle", "booting")
 # reading as a second, unrelated ink.
 BAND_INK_HEX = "04121A"
 
-# The band's own fill overexposes toward white, the same way a typed line's
-# CORE does against its halo (see COLOUR above) -- it is not just the dialog
-# colour laid flat. A colour histogram of the reference panel found its single
-# most common bright pixel (the band, by far the largest lit area) at
-# #D5F9FA, distinctly closer to white than the border/dash tone that measured
-# DIALOG_COLOUR against (~#AADAE5). Using DIALOG_HEX for the band too, as an
-# earlier version of this did, left every lit element -- band, frame, dashes
-# -- at one flat tone, which is what read as washed out next to the reference.
-BAND_FILL_HEX = "D5F9FA"
+# The band uses the same tone as the frame and progress track. The previous
+# brighter fill caused a visible jump when the splash entered the load phase.
+# Reusing DIALOG_HEX keeps every panel element at the same boot-time level and
+# avoids a second colour value that can drift from the dialog colour.
+BAND_FILL_HEX = DIALOG_HEX
 
 # The one-shot feedback, worn by the panel's own title band -- each takes it
 # over for a beat, then hands it back. GRANTED is a real signal (it plays
