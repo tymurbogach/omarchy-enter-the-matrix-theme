@@ -352,6 +352,10 @@ LINE_GLOW_WIDE_WEIGHT = 0.6     # film-like halo, not a broad neon haze
 LINE_GLOW_COUNTER_GUARD = 8     # Close radius: bridges a bowl, not a letter gap
 LINE_GLOW_OPACITY = 0.85        # core stays crisp while the bloom stays quiet
 CRT_SCANLINE_OPACITY = 0.12     # 12% dark every other native screen row
+# The phosphor grid belongs inside each baked asset.  The text grid has enough
+# contrast to read as a dot matrix; the panel grid only breaks up flat ink.
+PHOSPHOR_TEXT_TILE = "crt-phosphor-text.png"
+PHOSPHOR_PANEL_TILE = "crt-phosphor-panel.png"
 
 
 def pace(mode):
@@ -1322,6 +1326,34 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
                     "-draw", "point 0,1", "-strip",
                     str(target / "crt-scanline.png")], check=True)
 
+    # These opaque greys are alpha masks, not coloured overlays. A white dot
+    # survives at full ink over a near-solid field. The panel keeps more of
+    # its ink so its ice-blue frame and readout do not turn green.
+    def phosphor_tile(name, field, size):
+        subprocess.run(["magick", "-size", size, f"xc:{field}",
+                        "-fill", "white", "-draw", "point 1,1", "-strip",
+                        str(target / name)], check=True)
+
+    # A 2 px cell falls below one displayed pixel once Plymouth scales the
+    # generously baked text down.  Its near-solid field preserves the bright
+    # phosphor core; only a fine texture remains, rather than comic-book dots.
+    phosphor_tile(PHOSPHOR_TEXT_TILE, "#C8C8C8", "2x2")
+    phosphor_tile(PHOSPHOR_PANEL_TILE, "#B0B0B0", "4x4")
+
+    def apply_phosphor(path, tile):
+        """Multiply an asset alpha by a regular phosphor-dot mask."""
+        width, height = measure(path)
+        output = path.with_name(f".phosphor-{path.name}")
+        subprocess.run([
+            "magick", str(path),
+            "(", str(path), "-alpha", "extract",
+            "(", "-size", f"{width}x{height}", f"tile:{target / tile}", ")",
+            "-compose", "Multiply", "-composite", ")",
+            "-alpha", "off", "-compose", "CopyOpacity", "-composite",
+            "-strip", str(output),
+        ], check=True)
+        output.replace(path)
+
     size = 120                      # generous: everything is only scaled DOWN
 
     # Air between the digit glyphs, the drawn track segments, and the mask's
@@ -1370,6 +1402,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
         for index, line in enumerate(lines):
             core = target / f"line-{mode}-{index}.png"
             render(line, f"#{line_hex}", core)
+            apply_phosphor(core, PHOSPHOR_TEXT_TILE)
             # The glow is baked from its OWN colour source, not from `core`:
             # same glyph shapes (so the crop math below still lines up cell
             # for cell), different ink, so the bloom can be a more saturated
@@ -1506,6 +1539,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     # by construction rather than by a guard comparing two renders.
     render(ATLAS, f"#{DIALOG_HEX}", target / "digits.png", panel_path,
            kerning=kerning)
+    apply_phosphor(target / "digits.png", PHOSPHOR_PANEL_TILE)
     # The panel's face gets the same two guards the lines' face got above.
     # Monospace first: the readout crops cells out of this strip, so every
     # glyph but the space must be one identical cell (the space's advance was
@@ -1560,6 +1594,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     subprocess.run(["magick", "-size", f"{bar_w}x{row_height}", "xc:none",
                     "-fill", f"#{DIALOG_HEX}", "-draw", bars, "-strip",
                     str(target / "bar.png")], check=True)
+    apply_phosphor(target / "bar.png", PHOSPHOR_PANEL_TILE)
 
     # Does the widest row (mask, or track+gap+digits, whichever needs more
     # cells) actually fit the interior once kerning's air is added back in?
@@ -1597,6 +1632,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     subprocess.run(["magick", "-size", f"{key_w}x{int(row_height)}", "xc:none",
                     "-fill", f"#{DIALOG_HEX}", "-draw", dashes, "-strip",
                     str(target / "keydots.png")], check=True)
+    apply_phosphor(target / "keydots.png", PHOSPHOR_PANEL_TILE)
 
     # Are the dashes actually visible -- and still dashes? Ask the PICTURE,
     # the same way every other guard in this function does: measure how much
@@ -1771,6 +1807,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
             "magick", str(target / name), str(target / ".caption.png"),
             "-geometry", f"+{left}+{stroke + (band_h - caption_h) // 2}",
             "-composite", "-strip", str(target / name)], check=True)
+        apply_phosphor(target / name, PHOSPHOR_PANEL_TILE)
     (target / ".caption.png").unlink(missing_ok=True)
 
     return {
@@ -2002,6 +2039,15 @@ def ensure_user_font(theme_dir):
                        check=False, capture_output=True)
 
 
+def authenticate_install():
+    """Ask for sudo before the expensive, unprivileged asset generation."""
+    try:
+        subprocess.run(["sudo", "-v"], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        die(f"sudo authentication failed, so the boot splash was not installed.\n"
+            f"  Nothing was written. From a real terminal, run: {CLI} boot on")
+
+
 def main():
     stage_only = "--stage-only" in sys.argv
     # The one entry point that used to escape the die() treatment below: with
@@ -2024,6 +2070,13 @@ def main():
                theme_colour("foreground", theme_dir),
                theme_colour("green", theme_dir),
                theme_dir / "unlock.png")
+
+    # Rendering the assets starts 131 ImageMagick processes on this machine.
+    # Authenticate first, so a user sees the password prompt immediately
+    # instead of after the long, unprivileged generation phase.
+    if not stage_only:
+        authenticate_install()
+        print("  Authenticated. Generating CRT assets…", flush=True)
 
     # Before anything resolves the family: the caps label, the preview and,
     # later, the mkinitcpio hook all go through fc-match, not through the file.
@@ -2057,6 +2110,8 @@ def main():
             print(f"  staged at {out} (not installed)")
             print(f"  see it: tools/preview-plymouth.sh <scenario>")
             return
+
+        print("  Installing the Plymouth theme…", flush=True)
 
         # The five privileged steps. sudo may have nowhere to ask for a
         # password -- from a hook, from an agent, from an editor's shell -- or
@@ -2105,6 +2160,7 @@ def main():
             # The same rebuild, with the same log, as Omarchy's own
             # omarchy-plymouth-set: picking this card in Style > Unlock looks
             # the same as picking any other.
+            print("  Rebuilding the initramfs…", flush=True)
             if shutil.which("limine-mkinitcpio"):
                 subprocess.run(["sudo", "limine-mkinitcpio"], check=True)
             else:

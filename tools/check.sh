@@ -170,14 +170,23 @@ for needle in (
     'BOOT_BACKGROUND_HEX = "000000"',
     'CRT_SCANLINE_OPACITY = 0.12',
     'crt-scanline.png',
+    'crt-phosphor-text.png',
+    'crt-phosphor-panel.png',
+    'apply_phosphor',
     'mx_crt.image.Tile(global.mx_w, global.mx_h)',
     'write_early_backlight_config',
     'install_early_backlight',
 ):
     if needle not in plymouth:
         bad(f"derive-plymouth.py is missing {needle!r}")
-if plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)') > plymouth.find('Optional phosphor scanlines'):
+callback = plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)')
+crt = plymouth.find('Optional phosphor scanlines')
+if callback == -1 or crt == -1 or callback > crt:
     bad("the CRT layer is initialized before the password callback")
+early_sudo = plymouth.find('subprocess.run(["sudo", "-v"], check=True)')
+asset_stage = plymouth.find('font, face, early_backlight = stage(staging, colours, theme_dir)')
+if early_sudo == -1 or asset_stage == -1 or early_sudo > asset_stage:
+    bad("derive-plymouth.py does not authenticate before generating splash assets")
 for needle in (
     'remove_early_backlight',
     'initramfs_rebuild',
