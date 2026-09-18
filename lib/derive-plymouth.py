@@ -43,6 +43,15 @@ SLUG = PROVIDER["slug"]
 CLI = PROVIDER["cli"]
 THEME = PROVIDER["plymouth"]["theme"]
 TARGET = Path("/usr/share/plymouth/themes") / THEME
+ROOT = Path(__file__).resolve().parent.parent
+INITCPIO = ROOT / "initcpio"
+INITCPIO_HOOK = Path("/etc/initcpio/hooks/omarchy-matrix-backlight")
+INITCPIO_INSTALL = Path("/etc/initcpio/install/omarchy-matrix-backlight")
+INITCPIO_CONFIG = Path("/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf")
+EARLY_BACKLIGHT_CONFIG = "early-backlight.conf"
+# The boot is Neo's terminal, not the desktop. Keep its black independent from
+# colors.toml, whose softer background suits the running desktop instead.
+BOOT_BACKGROUND_HEX = "000000"
 # Where the boot's text face lives on the system. The mkinitcpio hook resolves
 # `Font=` with fc-match as root, so a user-local install is not enough: the
 # face has to be visible system-wide, or the initramfs gets the wrong file.
@@ -339,9 +348,10 @@ DENIED_HOLD = 45            # 0.9s
 # this assumed they could be.
 LINE_GLOW_BLUR = "0x4"          # inner: tight, keeps the bright edge on the ink
 LINE_GLOW_BLUR_WIDE = "0x18"    # outer: the wide, soft ambient bloom
-LINE_GLOW_WIDE_WEIGHT = 0.9     # outer dimmed before adding: haze, not a core
+LINE_GLOW_WIDE_WEIGHT = 0.6     # film-like halo, not a broad neon haze
 LINE_GLOW_COUNTER_GUARD = 8     # Close radius: bridges a bowl, not a letter gap
-LINE_GLOW_OPACITY = 1.0         # combined halo sprite opacity under the core
+LINE_GLOW_OPACITY = 0.85        # core stays crisp while the bloom stays quiet
+CRT_SCANLINE_OPACITY = 0.12     # 12% dark every other native screen row
 
 
 def pace(mode):
@@ -594,6 +604,14 @@ global.mx_b = $B;   # takes its colour too.
 global.mx_font = "$FONT";
 global.mx_w = Window.GetWidth();
 global.mx_h = Window.GetHeight();
+
+# A dim phosphor scan every other native row. This is a tiled mask, not a
+# baked effect on text, so the terminal and its panel keep the same texture
+# after Plymouth scales them to this screen.
+mx_crt.image = Image("crt-scanline.png");
+mx_crt.sprite = Sprite(mx_crt.image.Tile(global.mx_w, global.mx_h));
+mx_crt.sprite.SetPosition(0, 0, 11000);
+mx_crt.sprite.SetOpacity($CRT_ALPHA);
 
 # Ask the font how big it really is at a known size, then scale to the width we
 # actually want. 40 is arbitrary and cancels out. Still needed for the prompt
@@ -1211,7 +1229,7 @@ def typing_block(font, metrics):
     return TYPING.substitute(
         NAME=name, RULE="-" * max(1, 35 - len(name)), CLI=CLI, FONT=font,
         R=DIALOG_COLOUR[0], G=DIALOG_COLOUR[1], B=DIALOG_COLOUR[2],
-        GLOW_ALPHA=LINE_GLOW_OPACITY,
+        GLOW_ALPHA=LINE_GLOW_OPACITY, CRT_ALPHA=CRT_SCANLINE_OPACITY,
         TEXT_X=TEXT_X, TEXT_Y=TEXT_Y, TEXT_WIDTH=TEXT_WIDTH,
         WIDEST_CELLS=metrics["WIDEST_CELLS"], LINE_ASPECT=metrics["LINE_ASPECT"],
         LINE_LOAD="\n".join(load), TABLE="\n".join(table),
@@ -1304,6 +1322,13 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
             f"  It ships with the theme, in {PANEL_FONT_FILE}. "
             f"Re-install the theme.")
     glow_hex = glow_hex or line_hex
+
+    # A two-row alpha mask, tiled only after Plymouth knows the native panel
+    # size. Baking lines into each text asset would alias whenever the script
+    # scales that asset at boot; this stays one real screen row at every size.
+    subprocess.run(["magick", "-size", "1x2", "xc:none", "-fill", "#000000",
+                    "-draw", "point 0,1", "-strip",
+                    str(target / "crt-scanline.png")], check=True)
 
     size = 120                      # generous: everything is only scaled DOWN
 
@@ -1816,6 +1841,46 @@ def patch(text, font, metrics):
     return text + dialog_block(metrics)
 
 
+def write_early_backlight_config(target):
+    """Record the active panel's current percentage for the initramfs hook.
+
+    The kernel starts with its firmware brightness. systemd restores the saved
+    desktop level just after Plymouth appears, which makes a visible step. The
+    hook runs between udev and Plymouth and writes this percentage first.
+    """
+    root = Path("/sys/class/backlight")
+    for device in sorted(root.iterdir()) if root.is_dir() else []:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", device.name):
+            continue
+        try:
+            current = int((device / "brightness").read_text().strip())
+            maximum = int((device / "max_brightness").read_text().strip())
+        except (OSError, ValueError):
+            continue
+        if not (0 < current <= maximum):
+            continue
+        percent = max(1, min(100, (current * 100 + maximum // 2) // maximum))
+        (target / EARLY_BACKLIGHT_CONFIG).write_text(
+            f"DEVICE={device.name}\nPERCENT={percent}\n")
+        return device.name, percent
+    return None
+
+
+def install_early_backlight():
+    """Install the initcpio hook that reads the generated theme config."""
+    sources = (
+        (INITCPIO / "hooks/omarchy-matrix-backlight", INITCPIO_HOOK, "755"),
+        (INITCPIO / "install/omarchy-matrix-backlight", INITCPIO_INSTALL, "755"),
+        (INITCPIO / "99-omarchy-matrix-backlight.conf", INITCPIO_CONFIG, "644"),
+    )
+    for source, _, _ in sources:
+        if not source.is_file():
+            die(f"the initcpio source is missing: {source}. Re-install the theme.")
+    for source, destination, mode in sources:
+        subprocess.run(["sudo", "install", "-D", "-m", mode, str(source),
+                        str(destination)], check=True)
+
+
 def stage(target, colours, theme_dir):
     background, foreground, accent, logo = colours
     if not (SOURCE / "omarchy.script").is_file():
@@ -1853,8 +1918,9 @@ def stage(target, colours, theme_dir):
     panel = theme_dir / PANEL_FONT_FILE
     metrics = splash_assets(target, face, COLOUR_HEX or accent, panel,
                             GLOW_COLOUR_HEX)
+    early_backlight = write_early_backlight_config(target)
 
-    r, g, b = (int(background[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    r, g, b = (int(BOOT_BACKGROUND_HEX[i:i + 2], 16) / 255 for i in (0, 2, 4))
     script = (target / "omarchy.script").read_text()
     script = re.sub(r"^Window\.SetBackgroundTopColor.*$",
                     f"Window.SetBackgroundTopColor({r:.3f}, {g:.3f}, {b:.3f});",
@@ -1881,11 +1947,11 @@ ModuleName=script
 [script]
 ImageDir={TARGET}
 ScriptFile={TARGET}/{THEME}.script
-ConsoleLogBackgroundColor=0x{background}
+ConsoleLogBackgroundColor=0x{BOOT_BACKGROUND_HEX}
 MonospaceFont={font} 16
 Font={font} 16
 """)
-    return font, face
+    return font, face, early_backlight
 
 
 def theme_colour(key, theme_dir):
@@ -1956,7 +2022,7 @@ def main():
 
     staging = Path(tempfile.mkdtemp(prefix=f"{SLUG}-plymouth."))
     try:
-        font, face = stage(staging, colours, theme_dir)
+        font, face, early_backlight = stage(staging, colours, theme_dir)
 
         if stage_only:
             # What a designer wants to know. Somebody who picks a card in
@@ -1970,6 +2036,11 @@ def main():
             print(f"  drawn in {face.name}, baked to PNG; {font!r} only for the "
                   f"CAPS LOCK label")
             print(f"  every size measured at boot, none baked in")
+            if early_backlight:
+                device, percent = early_backlight
+                print(f"  early backlight: {device} at {percent}%")
+            else:
+                print("  early backlight: no writable panel found; not installed")
             out = Path.home() / f".cache/{CLI}/plymouth"
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(out, ignore_errors=True)
@@ -2012,6 +2083,14 @@ def main():
                            check=True)
             subprocess.run(["sudo", "fc-cache", "-f", str(SYS_FONT_DIR)],
                            check=True)
+            if early_backlight:
+                install_early_backlight()
+            else:
+                # An older install can carry this file even after its panel
+                # disappeared. Do not leave a hook that points at no setting.
+                subprocess.run(["sudo", "rm", "-f", str(TARGET / EARLY_BACKLIGHT_CONFIG),
+                                str(INITCPIO_HOOK), str(INITCPIO_INSTALL),
+                                str(INITCPIO_CONFIG)], check=True)
             subprocess.run(["sudo", "plymouth-set-default-theme", THEME], check=True)
 
             # The same rebuild, with the same log, as Omarchy's own

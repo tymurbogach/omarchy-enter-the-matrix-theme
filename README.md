@@ -73,6 +73,11 @@ omarchy-matrix boot on      # the boot splash, as Style › Unlock sets it
 omarchy-matrix uninstall
 ```
 
+`boot on` records the current screen brightness and applies that percentage in
+the initramfs before Plymouth starts. This prevents the brightness step when
+the system later restores its desktop setting. If you deliberately change that
+setting, run `omarchy-matrix boot on` again before the next reboot.
+
 Try the lock without locking yourself out: `omarchy-shell lock preview`. See the
 boot splash without rebooting: `tools/preview-plymouth.sh` from a checkout, and
 the shutdown one without shutting down: append `--mode shutdown`.
@@ -158,9 +163,12 @@ bar:
 ~/.local/share/omarchy-matrix/                                          the pack itself, and the theme to return to
 ~/.config/omarchy/plugins/<username>.lock                               only while the theme is on
 /usr/share/plymouth/themes/omarchy-matrix/                              only while the Matrix boot splash is on
+/etc/initcpio/{hooks,install}/omarchy-matrix-backlight                   only while the Matrix boot splash is on
+/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf                 only while the Matrix boot splash is on
 ```
 
-The last two are the derived pieces, and neither overwrites the original.
+The lock and Plymouth theme are derived. The initcpio files are an additive
+hook and configuration fragment. Neither overwrites an Omarchy source file.
 `omarchy.lock` stays where it was. Plymouth's `omarchy` theme changes only
 through Omarchy's own `omarchy plymouth set by theme`, the command that its
 Style › Unlock menu runs.
@@ -168,9 +176,9 @@ Style › Unlock menu runs.
 The two menu rows are derived too: the pack builds each one from Omarchy's own
 row on every run, and if Omarchy changes a row, Omarchy's original comes back.
 
-"Only while it is on" is meant literally, including for the one path outside
-your home directory: another card in Style › Unlock hands the splash back **and**
-removes that directory. Nothing is left behind, whether or not you ever
+"Only while it is on" is meant literally, including the system paths: another
+card in Style › Unlock hands the splash back **and** removes them. Nothing is
+left behind, whether or not you ever
 uninstall.
 
 ## The backgrounds

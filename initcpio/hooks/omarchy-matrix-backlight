@@ -1,0 +1,38 @@
+#!/usr/bin/ash
+# shellcheck shell=dash
+
+# Set the saved desktop brightness before Plymouth first reaches the panel.
+# The config rides in the active Matrix theme, so this hook does nothing when
+# the theme was not bundled into the current initramfs.
+run_hook() {
+    local config device percent max value
+
+    config=${OMARCHY_MATRIX_BACKLIGHT_CONFIG:-/usr/share/plymouth/themes/omarchy-matrix/early-backlight.conf}
+    root=${OMARCHY_MATRIX_BACKLIGHT_ROOT:-/sys/class/backlight}
+    [ -r "$config" ] || return 0
+
+    # The file is generated from one active /sys/class/backlight entry at
+    # `omarchy-matrix boot on` time. Parse only the two exact assignments the
+    # generator writes. A malformed or stale file must never interrupt boot.
+    device=''
+    percent=''
+    while IFS= read -r assignment; do
+        case "$assignment" in
+            DEVICE=*) device=${assignment#DEVICE=} ;;
+            PERCENT=*) percent=${assignment#PERCENT=} ;;
+            *) return 0 ;;
+        esac
+    done <"$config"
+    case "$device" in '' | *[!A-Za-z0-9_.-]* ) return 0 ;; esac
+    case "$percent" in '' | *[!0-9]* ) return 0 ;; esac
+    [ "$percent" -ge 1 ] && [ "$percent" -le 100 ] || return 0
+
+    max="$root/$device/max_brightness"
+    value="$root/$device/brightness"
+    [ -r "$max" ] && [ -w "$value" ] || return 0
+    max=$(cat "$max")
+    case "$max" in *[!0-9]* | '') return 0 ;; esac
+    [ "$max" -gt 0 ] || return 0
+
+    printf '%s\n' $((max * percent / 100)) >"$value" 2>/dev/null || true
+}

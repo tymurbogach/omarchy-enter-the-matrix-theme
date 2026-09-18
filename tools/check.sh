@@ -98,6 +98,7 @@ slug, cli = provider["slug"], provider["cli"]
 service = (root / "Service.qml").read_text()
 manifest = json.loads((root / "manifest.json").read_text())
 cli = (root / "bin" / "omarchy-matrix").read_text()
+plymouth = (root / "lib" / "derive-plymouth.py").read_text()
 # No switches: Omarchy's own choices decide every piece. Up to 1.2.x a settings
 # file and a bar widget of the pack's own duplicated them.
 if re.search(r'\.config/omarchy/[^"]*\.json', service):
@@ -153,6 +154,34 @@ if '"org.omarchy.screensaver"' not in service:
     bad("Service.qml does not follow Omarchy's screensaver window (org.omarchy.screensaver)")
 if "omarchy-toggle screensaver-off on" in cli:
     bad("bin/omarchy-matrix switches Omarchy's screensaver off: that flag belongs to the user")
+# The backlight hook is a complete, removable initramfs layer. It must run
+# before Plymouth and its generated config must survive into the active theme.
+for path in (
+    root / "initcpio/hooks/omarchy-matrix-backlight",
+    root / "initcpio/install/omarchy-matrix-backlight",
+    root / "initcpio/99-omarchy-matrix-backlight.conf",
+):
+    if not path.is_file():
+        bad(f"early backlight source is missing: {path.relative_to(root)}")
+if 'HOOKS+=(omarchy-matrix-backlight)' not in (root / "initcpio/99-omarchy-matrix-backlight.conf").read_text():
+    bad("the early backlight hook is not added to mkinitcpio")
+for needle in (
+    'BOOT_BACKGROUND_HEX = "000000"',
+    'CRT_SCANLINE_OPACITY = 0.12',
+    'crt-scanline.png',
+    'mx_crt.image.Tile(global.mx_w, global.mx_h)',
+    'write_early_backlight_config',
+    'install_early_backlight',
+):
+    if needle not in plymouth:
+        bad(f"derive-plymouth.py is missing {needle!r}")
+for needle in (
+    'remove_early_backlight',
+    'initramfs_rebuild',
+    '99-omarchy-matrix-backlight.conf',
+):
+    if needle not in cli:
+        bad(f"bin/omarchy-matrix does not remove its early backlight layer ({needle})")
 for message in errors:
     print(f"  FAIL: {message}")
 sys.exit(1 if errors else 0)
@@ -179,6 +208,36 @@ check_repo_hygiene() {
     if [[ -L $ROOT/$f ]]; then fail "symlink on disk: $f"; fi
   done
   return 0
+}
+
+# --- initramfs backlight ----------------------------------------------------
+
+check_early_backlight() {
+  section "early initramfs backlight hook"
+  local tmp hook
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  hook="$ROOT/initcpio/hooks/omarchy-matrix-backlight"
+  mkdir -p "$tmp/backlight/intel_backlight"
+  printf '100\n' >"$tmp/backlight/intel_backlight/max_brightness"
+  printf '1\n' >"$tmp/backlight/intel_backlight/brightness"
+  printf 'DEVICE=intel_backlight\nPERCENT=20\n' >"$tmp/config"
+  OMARCHY_MATRIX_BACKLIGHT_CONFIG="$tmp/config" \
+    OMARCHY_MATRIX_BACKLIGHT_ROOT="$tmp/backlight" \
+    sh -c '. "$1"; run_hook' sh "$hook" || {
+      fail "the early backlight hook does not run"
+      return 0
+    }
+  [[ $(<"$tmp/backlight/intel_backlight/brightness") == 20 ]] ||
+    fail "the early backlight hook did not set 20%"
+
+  printf 'DEVICE=../../bad\nPERCENT=20\n' >"$tmp/config"
+  printf '1\n' >"$tmp/backlight/intel_backlight/brightness"
+  OMARCHY_MATRIX_BACKLIGHT_CONFIG="$tmp/config" \
+    OMARCHY_MATRIX_BACKLIGHT_ROOT="$tmp/backlight" \
+    sh -c '. "$1"; run_hook' sh "$hook" || fail "the malformed hook fixture failed"
+  [[ $(<"$tmp/backlight/intel_backlight/brightness") == 1 ]] ||
+    fail "the early backlight hook accepts an unsafe device name"
 }
 
 # --- M4 ownership fixtures ---------------------------------------------------
@@ -322,12 +381,14 @@ PY
 # --- main ----------------------------------------------------------------------
 
 check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
-  tools/capture-showcase.sh tools/check.sh
+  tools/capture-showcase.sh tools/check.sh initcpio/hooks/omarchy-matrix-backlight \
+  initcpio/install/omarchy-matrix-backlight
 check_python lib/*.py tools/*.py
 check_qml Service.qml MatrixRain.qml
 check_validate "$ROOT"
 check_main_coherence
 check_repo_hygiene
+check_early_backlight
 check_ownership
 check_menu
 

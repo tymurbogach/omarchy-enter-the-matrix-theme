@@ -782,6 +782,9 @@ release.
      `omarchy-matrix-uninstall`);
    - `~/.local/share/omarchy-matrix/`;
    - `/usr/share/plymouth/themes/omarchy-matrix/`;
+   - `/etc/initcpio/hooks/omarchy-matrix-backlight`;
+   - `/etc/initcpio/install/omarchy-matrix-backlight`;
+   - `/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf`;
    - the link `~/.config/omarchy/backgrounds/enter-the-matrix/0-live-rain.png`;
    - from 1.2.x: the widget entry in the bar layout of `shell.json`, and
      `~/.config/omarchy/enter-the-matrix.json`;

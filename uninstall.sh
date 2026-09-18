@@ -94,9 +94,22 @@ if [[ -x $HERE/lib/derive-menu.py ]]; then
     echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
 fi
 
-# The boot splash is the only piece that lives outside your home directory, so
-# it is also the only one that would survive an uninstall unnoticed. It needs a
-# password and rebuilds the initramfs, which is why it is asked for last.
+# The boot layer owns the Plymouth theme and one initramfs hook. Both live
+# outside home, need a password and must go before the final rebuild.
+early_backlight_removed=0
+if [[ -e /etc/initcpio/hooks/omarchy-matrix-backlight ||
+      -e /etc/initcpio/install/omarchy-matrix-backlight ||
+      -e /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf ]]; then
+  echo "· removing the early boot backlight hook (needs your password)"
+  if sudo rm -f /etc/initcpio/hooks/omarchy-matrix-backlight \
+      /etc/initcpio/install/omarchy-matrix-backlight \
+      /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf; then
+    early_backlight_removed=1
+  else
+    echo "  skipped — remove the Matrix backlight hook from /etc/initcpio later" >&2
+  fi
+fi
+
 current_plymouth=$(plymouth-set-default-theme 2>/dev/null) ||
   current_plymouth=$(sed -n 's/^Theme=//p' /etc/plymouth/plymouthd.conf 2>/dev/null)
 
@@ -109,11 +122,26 @@ current_plymouth=$(plymouth-set-default-theme 2>/dev/null) ||
 # it whenever the pack's row is not in charge. With the theme about to go, that
 # goes as well. --keep-theme keeps it, like the theme.
 omarchy_plymouth=$(omarchy-plymouth-current 2>/dev/null) || omarchy_plymouth=""
+boot_reset=0
 if [[ ${current_plymouth:-} == "$PLYMOUTH_THEME" ]] ||
   { ((!KEEP_THEME)) && [[ $omarchy_plymouth == "$SLUG" ]]; }; then
   echo "· handing the boot splash back (needs your password, rebuilds the initramfs)"
-  omarchy-plymouth-reset ||
+  if omarchy-plymouth-reset; then
+    boot_reset=1
+  else
     echo "  skipped — undo it later with: omarchy plymouth reset" >&2
+  fi
+fi
+
+if ((early_backlight_removed && !boot_reset)); then
+  echo "· rebuilding the initramfs without the Matrix backlight hook"
+  if command -v limine-mkinitcpio >/dev/null 2>&1; then
+    sudo limine-mkinitcpio ||
+      echo "  skipped — rebuild later with: sudo limine-mkinitcpio" >&2
+  else
+    sudo mkinitcpio -P ||
+      echo "  skipped — rebuild later with: sudo mkinitcpio -P" >&2
+  fi
 fi
 
 # Asked again, AFTER the reset. Never before it: removing the folder of a theme

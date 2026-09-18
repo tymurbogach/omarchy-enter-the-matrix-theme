@@ -226,7 +226,8 @@ offer_live_background "$live_theme"
 # symlink, so the command resolves its root -- and everything else -- from
 # itself, and no file writes the share path by hand.
 
-mkdir -p "$BIN_DIR" "$SHARE_DIR/bin" "$SHARE_DIR/lib"
+mkdir -p "$BIN_DIR" "$SHARE_DIR/bin" "$SHARE_DIR/lib" \
+  "$SHARE_DIR/initcpio/hooks" "$SHARE_DIR/initcpio/install"
 install -m 755 "$HERE/bin/$CLI" "$SHARE_DIR/bin/$CLI"
 install -m 755 "$HERE/lib/derive-lock.py" "$SHARE_DIR/lib/derive-lock.py"
 install -m 755 "$HERE/lib/derive-plymouth.py" "$SHARE_DIR/lib/derive-plymouth.py"
@@ -235,6 +236,12 @@ install -m 755 "$HERE/lib/derive-menu.py" "$SHARE_DIR/lib/derive-menu.py"
 install -m 644 "$HERE/lib/provider.py" "$SHARE_DIR/lib/provider.py"
 # Sourced by the CLI and both scripts; without it nothing runs.
 install -m 644 "$HERE/lib/pack.sh" "$SHARE_DIR/lib/pack.sh"
+install -m 755 "$HERE/initcpio/hooks/omarchy-matrix-backlight" \
+  "$SHARE_DIR/initcpio/hooks/omarchy-matrix-backlight"
+install -m 755 "$HERE/initcpio/install/omarchy-matrix-backlight" \
+  "$SHARE_DIR/initcpio/install/omarchy-matrix-backlight"
+install -m 644 "$HERE/initcpio/99-omarchy-matrix-backlight.conf" \
+  "$SHARE_DIR/initcpio/99-omarchy-matrix-backlight.conf"
 install -m 644 "$PROVIDER" "$SHARE_DIR/provider.json"
 # uninstall.sh lives in the theme directory, and `omarchy theme remove` deletes
 # that directory and nothing else -- so a copy goes to the share dir, where it

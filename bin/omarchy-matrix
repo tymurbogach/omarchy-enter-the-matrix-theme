@@ -363,23 +363,51 @@ derive_boot() {
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-plymouth.py"
 }
 
+initramfs_rebuild() {
+  if command -v limine-mkinitcpio >/dev/null 2>&1; then
+    sudo limine-mkinitcpio
+  else
+    sudo mkinitcpio -P
+  fi
+}
+
+early_backlight_present() {
+  [[ -e /etc/initcpio/hooks/omarchy-matrix-backlight ||
+     -e /etc/initcpio/install/omarchy-matrix-backlight ||
+     -e /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf ]]
+}
+
+# The hook lives in /etc, not below the package-owned Omarchy tree. Remove it
+# before a rebuild, otherwise an old initramfs would still run it after Off.
+remove_early_backlight() {
+  early_backlight_present || return 1
+  sudo rm -f /etc/initcpio/hooks/omarchy-matrix-backlight \
+    /etc/initcpio/install/omarchy-matrix-backlight \
+    /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight
+}
+
 # Only reset when a Matrix splash is the one installed: the animation, or
 # Omarchy's still one. Resetting unconditionally rebuilt the initramfs for
 # nothing, and dragged somebody who had picked `spinner` back to Omarchy's,
 # overriding a choice the pack never made. The directory goes either way.
 boot_off() {
+  local removed_early_backlight=0
+  if remove_early_backlight; then
+    removed_early_backlight=1
+  fi
   if boot_applied || omarchy_boot_is_ours; then
     omarchy-plymouth-reset || return 1
+  elif ((removed_early_backlight)); then
+    initramfs_rebuild || return 1
   fi
   remove_plymouth_theme
 }
 
-# The pack's only footprint outside $HOME. `omarchy plymouth reset` puts
-# Omarchy's theme back but leaves ours in /usr/share/plymouth/themes, so off
-# takes it back too. Always AFTER the reset, never before: pulling the folder
-# out from under a theme that is still the default boots to a black screen.
-# The text face in /usr/share/fonts goes with it: it arrived with the splash,
-# and only the splash needs it there.
+# The boot layer also owns its theme and text face. `omarchy plymouth reset`
+# puts Omarchy's theme back but leaves ours in /usr/share/plymouth/themes, so
+# off takes it back too. Always AFTER the reset, never before: pulling the
+# folder out from under a theme that is still the default boots to a black
+# screen.
 remove_plymouth_theme() {
   local dir="/usr/share/plymouth/themes/$PLYMOUTH_THEME"
   [[ -d $dir ]] && sudo rm -rf "$dir"
