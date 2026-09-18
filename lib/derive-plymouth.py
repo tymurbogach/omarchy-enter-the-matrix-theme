@@ -605,14 +605,6 @@ global.mx_font = "$FONT";
 global.mx_w = Window.GetWidth();
 global.mx_h = Window.GetHeight();
 
-# A dim phosphor scan every other native row. This is a tiled mask, not a
-# baked effect on text, so the terminal and its panel keep the same texture
-# after Plymouth scales them to this screen.
-mx_crt.image = Image("crt-scanline.png");
-mx_crt.sprite = Sprite(mx_crt.image.Tile(global.mx_w, global.mx_h));
-mx_crt.sprite.SetPosition(0, 0, 11000);
-mx_crt.sprite.SetOpacity($CRT_ALPHA);
-
 # Ask the font how big it really is at a known size, then scale to the width we
 # actually want. 40 is arbitrary and cancels out. Still needed for the prompt
 # and the caps label, which are the only text left.
@@ -1229,7 +1221,7 @@ def typing_block(font, metrics):
     return TYPING.substitute(
         NAME=name, RULE="-" * max(1, 35 - len(name)), CLI=CLI, FONT=font,
         R=DIALOG_COLOUR[0], G=DIALOG_COLOUR[1], B=DIALOG_COLOUR[2],
-        GLOW_ALPHA=LINE_GLOW_OPACITY, CRT_ALPHA=CRT_SCANLINE_OPACITY,
+        GLOW_ALPHA=LINE_GLOW_OPACITY,
         TEXT_X=TEXT_X, TEXT_Y=TEXT_Y, TEXT_WIDTH=TEXT_WIDTH,
         WIDEST_CELLS=metrics["WIDEST_CELLS"], LINE_ASPECT=metrics["LINE_ASPECT"],
         LINE_LOAD="\n".join(load), TABLE="\n".join(table),
@@ -1837,8 +1829,25 @@ def patch(text, font, metrics):
                 f"has changed shape: leaving it alone rather than half-overriding it.")
 
     # Appended, not spliced: there is no anchor to get wrong, and by the end of
-    # the file `entry` exists to hang the dialog off.
-    return text + dialog_block(metrics)
+    # the file `entry` exists to hang the dialog off. Keep the optional CRT
+    # layer after the callback registrations. A renderer-specific failure in
+    # this visual effect must never disable the password panel.
+    text += dialog_block(metrics)
+    text += f"""
+
+# Optional phosphor scanlines. The panel callbacks are registered above first,
+# so a renderer without tiled-image support keeps the complete password flow.
+mx_crt.image = Image("crt-scanline.png");
+if (mx_crt.image.GetWidth() > 0 && mx_crt.image.GetHeight() > 0) {{
+  mx_crt.tiled = mx_crt.image.Tile(global.mx_w, global.mx_h);
+  if (mx_crt.tiled.GetWidth() > 0 && mx_crt.tiled.GetHeight() > 0) {{
+    mx_crt.sprite = Sprite(mx_crt.tiled);
+    mx_crt.sprite.SetPosition(0, 0, 11000);
+    mx_crt.sprite.SetOpacity({CRT_SCANLINE_OPACITY});
+  }}
+}}
+"""
+    return text
 
 
 def write_early_backlight_config(target):

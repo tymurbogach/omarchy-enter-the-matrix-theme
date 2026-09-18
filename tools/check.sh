@@ -176,6 +176,8 @@ for needle in (
 ):
     if needle not in plymouth:
         bad(f"derive-plymouth.py is missing {needle!r}")
+if plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)') > plymouth.find('Optional phosphor scanlines'):
+    bad("the CRT layer is initialized before the password callback")
 for needle in (
     'remove_early_backlight',
     'initramfs_rebuild',
