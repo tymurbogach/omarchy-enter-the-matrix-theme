@@ -170,15 +170,16 @@ for needle in (
     'BOOT_BACKGROUND_HEX = "000000"',
     'CRT_SCANLINE_OPACITY = 0.12',
     'crt-scanline.png',
-    'crt-phosphor-text.png',
-    'crt-phosphor-panel.png',
-    'apply_phosphor',
+    'PANEL_ROW_CENTER = 0.57',
     'mx_crt.image.Tile(global.mx_w, global.mx_h)',
     'write_early_backlight_config',
     'install_early_backlight',
 ):
     if needle not in plymouth:
         bad(f"derive-plymouth.py is missing {needle!r}")
+for needle in ('crt-phosphor', 'apply_phosphor'):
+    if needle in plymouth:
+        bad(f"derive-plymouth.py keeps removed CRT texture code ({needle})")
 callback = plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)')
 crt = plymouth.find('Optional phosphor scanlines')
 if callback == -1 or crt == -1 or callback > crt:

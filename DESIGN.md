@@ -202,13 +202,11 @@ Details that explain the design, each of them forced by something:
   accent, which is one fewer hex to keep in step. The shader's phosphor
   `#00FF41` was what they used first, and at this size on black it reads as
   glare rather than as a monitor.
-- **The CRT material has four layers.** The typed line keeps a green core with
-  a near-solid, fine phosphor texture inside its ink. A short, smooth green
-  halo sits behind that core. The panel, mask, track and digits use the same
-  texture at lower contrast, so their ice-blue ink stays distinct. A separate
-  native-row scanline layer sits over the complete frame. The texture is baked
-  before boot-time scaling, while Plymouth tiles the scanlines at screen size.
-  Black remains black outside the assets.
+- **The CRT material has three layers.** The typed line keeps a clean green
+  core with a short, smooth halo behind it. The panel, mask, track and digits
+  stay solid ice blue. A native-row scanline layer sits over the complete
+  frame after Plymouth knows the screen size. This avoids a second pixel grid
+  and lets the screen's own sampling define the terminal texture.
 - **`logo.png` is still loaded, just invisible.** Its box is what
   `omarchy.script` uses to place the dialog, and we do not want to move it.
 - **Omarchy's password callback is not rewritten, it is out-registered.** Ours

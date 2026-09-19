@@ -352,10 +352,7 @@ LINE_GLOW_WIDE_WEIGHT = 0.6     # film-like halo, not a broad neon haze
 LINE_GLOW_COUNTER_GUARD = 8     # Close radius: bridges a bowl, not a letter gap
 LINE_GLOW_OPACITY = 0.85        # core stays crisp while the bloom stays quiet
 CRT_SCANLINE_OPACITY = 0.12     # 12% dark every other native screen row
-# The phosphor grid belongs inside each baked asset.  The text grid has enough
-# contrast to read as a dot matrix; the panel grid only breaks up flat ink.
-PHOSPHOR_TEXT_TILE = "crt-phosphor-text.png"
-PHOSPHOR_PANEL_TILE = "crt-phosphor-panel.png"
+PANEL_ROW_CENTER = 0.57         # row centre, as a share of the panel body
 
 
 def pace(mode):
@@ -1326,34 +1323,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
                     "-draw", "point 0,1", "-strip",
                     str(target / "crt-scanline.png")], check=True)
 
-    # These opaque greys are alpha masks, not coloured overlays. A white dot
-    # survives at full ink over a near-solid field. The panel keeps more of
-    # its ink so its ice-blue frame and readout do not turn green.
-    def phosphor_tile(name, field, size):
-        subprocess.run(["magick", "-size", size, f"xc:{field}",
-                        "-fill", "white", "-draw", "point 1,1", "-strip",
-                        str(target / name)], check=True)
-
-    # A 2 px cell falls below one displayed pixel once Plymouth scales the
-    # generously baked text down.  Its near-solid field preserves the bright
-    # phosphor core; only a fine texture remains, rather than comic-book dots.
-    phosphor_tile(PHOSPHOR_TEXT_TILE, "#C8C8C8", "2x2")
-    phosphor_tile(PHOSPHOR_PANEL_TILE, "#B0B0B0", "4x4")
-
-    def apply_phosphor(path, tile):
-        """Multiply an asset alpha by a regular phosphor-dot mask."""
-        width, height = measure(path)
-        output = path.with_name(f".phosphor-{path.name}")
-        subprocess.run([
-            "magick", str(path),
-            "(", str(path), "-alpha", "extract",
-            "(", "-size", f"{width}x{height}", f"tile:{target / tile}", ")",
-            "-compose", "Multiply", "-composite", ")",
-            "-alpha", "off", "-compose", "CopyOpacity", "-composite",
-            "-strip", str(output),
-        ], check=True)
-        output.replace(path)
-
     size = 120                      # generous: everything is only scaled DOWN
 
     # Air between the digit glyphs, the drawn track segments, and the mask's
@@ -1402,7 +1371,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
         for index, line in enumerate(lines):
             core = target / f"line-{mode}-{index}.png"
             render(line, f"#{line_hex}", core)
-            apply_phosphor(core, PHOSPHOR_TEXT_TILE)
             # The glow is baked from its OWN colour source, not from `core`:
             # same glyph shapes (so the crop math below still lines up cell
             # for cell), different ink, so the bloom can be a more saturated
@@ -1539,7 +1507,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     # by construction rather than by a guard comparing two renders.
     render(ATLAS, f"#{DIALOG_HEX}", target / "digits.png", panel_path,
            kerning=kerning)
-    apply_phosphor(target / "digits.png", PHOSPHOR_PANEL_TILE)
     # The panel's face gets the same two guards the lines' face got above.
     # Monospace first: the readout crops cells out of this strip, so every
     # glyph but the space must be one identical cell (the space's advance was
@@ -1594,7 +1561,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     subprocess.run(["magick", "-size", f"{bar_w}x{row_height}", "xc:none",
                     "-fill", f"#{DIALOG_HEX}", "-draw", bars, "-strip",
                     str(target / "bar.png")], check=True)
-    apply_phosphor(target / "bar.png", PHOSPHOR_PANEL_TILE)
 
     # Does the widest row (mask, or track+gap+digits, whichever needs more
     # cells) actually fit the interior once kerning's air is added back in?
@@ -1623,8 +1589,8 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     # own cell. The dialog shows nothing until the first keystroke; the dashes
     # are only ever cropped out of this image a few cells at a time.
     key_w = int(round(KEY_CELLS * cell))
-    dash_w = int(round(cell * 0.55))
-    dash_h = max(4, int(round(row_height * 0.14)))
+    dash_w = int(round(cell * 0.42))
+    dash_h = max(2, int(round(row_height * 0.08)))
     dashes = " ".join(
         f"rectangle {i * cell + (cell - dash_w) / 2},{(row_height - dash_h) / 2} "
         f"{i * cell + (cell + dash_w) / 2},{(row_height + dash_h) / 2}"
@@ -1632,7 +1598,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     subprocess.run(["magick", "-size", f"{key_w}x{int(row_height)}", "xc:none",
                     "-fill", f"#{DIALOG_HEX}", "-draw", dashes, "-strip",
                     str(target / "keydots.png")], check=True)
-    apply_phosphor(target / "keydots.png", PHOSPHOR_PANEL_TILE)
 
     # Are the dashes actually visible -- and still dashes? Ask the PICTURE,
     # the same way every other guard in this function does: measure how much
@@ -1704,21 +1669,16 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     content_h = int(row_height * 2.98)
     box_h = band_bottom + content_h
 
-    # ...and the row sits where the reference puts it: its ink starts 39%
-    # down the free space, not dead centre. `label:` returns a full line box
-    # with room for ascenders and descenders, and the glyph inks only part of
-    # it -- so placing the box leaves the only thing anyone can see wherever
-    # the box says, which the reference overrules: its dashes profile at 39%
-    # of the body, sitting high the way a text line does. Measured off the
-    # track, because blocks fill their cell and are therefore the honest
-    # extent of the row; the mask shares a baseline with them, so it lands
-    # where it should.
+    # Centre the shared passphrase and progress row in the lower half of the
+    # body. The title band makes a mathematical centre look high, while 57%
+    # gives the row equal visual weight above and below it.
     trimmed = subprocess.run(["magick", str(target / "bar.png"), "-format", "%@",
                               "info:"], capture_output=True, text=True,
                               check=True).stdout
     ink_h, ink_y = (int(n) for n in re.match(
         r"\d+x(\d+)\+\d+\+(\d+)", trimmed).groups())
-    content_y = band_bottom + int((content_h - ink_h) * 0.39) - ink_y
+    content_y = (band_bottom + int(content_h * PANEL_ROW_CENTER - ink_h / 2)
+                 - ink_y)
 
     corner_y0 = stroke + band_pad
     corner_y1 = corner_y0 + block
@@ -1807,7 +1767,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
             "magick", str(target / name), str(target / ".caption.png"),
             "-geometry", f"+{left}+{stroke + (band_h - caption_h) // 2}",
             "-composite", "-strip", str(target / name)], check=True)
-        apply_phosphor(target / name, PHOSPHOR_PANEL_TILE)
     (target / ".caption.png").unlink(missing_ok=True)
 
     return {
