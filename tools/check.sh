@@ -88,7 +88,7 @@ check_validate() { # <dir>
 check_main_coherence() {
   section "coherence with provider.json"
   if python3 - "$ROOT" <<'PY'
-import json, pathlib, re, sys
+import hashlib, json, pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 errors = []
 def bad(message):
@@ -132,6 +132,22 @@ elif not (root / live).is_file():
 stray = sorted(p.name for p in (root / "backgrounds").glob("*-live-*"))
 if stray:
     bad(f"backgrounds/ holds {stray}: the rain's still goes in liveBackground only")
+# Keep the curated carousel free of byte-identical copies. A duplicate makes
+# the background menu longer without offering another scene.
+backgrounds = root / "backgrounds"
+for name in ("11-falling-code.jpg", "12-mono-rain.jpg", "13-after-hours.jpg"):
+    if not (backgrounds / name).is_file():
+        bad(f"curated background is missing: {name}")
+seen_backgrounds = {}
+for image in sorted(backgrounds.glob("*")):
+    if not image.is_file():
+        continue
+    digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    other = seen_backgrounds.get(digest)
+    if other:
+        bad(f"duplicate background: {other.name} and {image.name}")
+    else:
+        seen_backgrounds[digest] = image
 # License: the manifest says MIT and the file to back it is there.
 if manifest.get("license") != "MIT":
     bad(f"manifest license is {manifest.get('license')!r}, want 'MIT'")
@@ -168,22 +184,30 @@ if 'omarchy-matrix-backlight' not in initcpio_config or 'plymouth' not in initcp
     bad("the early backlight hook is not ordered before Plymouth")
 for needle in (
     'BOOT_BACKGROUND_HEX = "000000"',
-    'CRT_SCANLINE_OPACITY = 0.12',
-    'crt-scanline.png',
+    'CRT_VIGNETTE_OPACITY = 0.08',
+    'CAPS_POLL_FRAMES = 10',
+    'crt-vignette.png',
     'PANEL_ROW_CENTER = 0.57',
-    'mx_crt.image.Tile(global.mx_w, global.mx_h)',
+    'mx_vignette.image.Scale(global.mx_w, global.mx_h)',
     'write_early_backlight_config',
     'install_early_backlight',
 ):
     if needle not in plymouth:
         bad(f"derive-plymouth.py is missing {needle!r}")
-for needle in ('crt-phosphor', 'apply_phosphor'):
+for needle in ('crt-phosphor', 'apply_phosphor', 'crt-scanline', 'CRT_SCANLINE'):
     if needle in plymouth:
         bad(f"derive-plymouth.py keeps removed CRT texture code ({needle})")
 callback = plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)')
-crt = plymouth.find('Optional phosphor scanlines')
+crt = plymouth.find('Optional CRT vignette')
 if callback == -1 or crt == -1 or callback > crt:
     bad("the CRT layer is initialized before the password callback")
+for needle in (
+    'if (shown == previous) return;',
+    'if (was_open == 0) {',
+    'global.mx_caps_frames >= $CAPS_POLL_FRAMES',
+):
+    if needle not in plymouth:
+        bad(f"derive-plymouth.py does not keep the low-work password path ({needle!r})")
 early_sudo = plymouth.find('subprocess.run(["sudo", "-v"], check=True)')
 asset_stage = plymouth.find('font, face, early_backlight = stage(staging, colours, theme_dir)')
 if early_sudo == -1 or asset_stage == -1 or early_sudo > asset_stage:

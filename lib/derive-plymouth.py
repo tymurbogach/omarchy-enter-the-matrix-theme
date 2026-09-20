@@ -189,6 +189,7 @@ ATLAS = "0123456789% "
 
 # --- the animation, in frames of the 50 fps refresh omarchy.script assumes ---
 FPS = 50
+CAPS_POLL_FRAMES = 10      # 0.2 s: prompt immediately, then avoid polling every frame
 FRAMES_PER_CHAR = 4         # -> 12.5 keystrokes a second
 OPEN_PAUSE = 45             # black, before the first letter
 HOLD_PAUSE = 90             # once a line is complete
@@ -346,12 +347,13 @@ DENIED_HOLD = 45            # 0.9s
 # wants without ever touching a bowl again -- radius and weight are back to
 # being tuned against the OUTSIDE only, the way the very first attempt at
 # this assumed they could be.
-LINE_GLOW_BLUR = "0x4"          # inner: tight, keeps the bright edge on the ink
-LINE_GLOW_BLUR_WIDE = "0x18"    # outer: the wide, soft ambient bloom
-LINE_GLOW_WIDE_WEIGHT = 0.6     # film-like halo, not a broad neon haze
+LINE_GLOW_BLUR = "0x3"          # inner: tight, keeps the bright edge on the ink
+LINE_GLOW_BLUR_WIDE = "0x12"    # outer: contained glow, never a fog bank
+LINE_GLOW_WIDE_WEIGHT = 0.45    # visible green bleed without a flat wash
 LINE_GLOW_COUNTER_GUARD = 8     # Close radius: bridges a bowl, not a letter gap
 LINE_GLOW_OPACITY = 0.85        # core stays crisp while the bloom stays quiet
-CRT_SCANLINE_OPACITY = 0.12     # 12% dark every other native screen row
+CRT_VIGNETTE_OPACITY = 0.08     # at the corners only; no repeated screen texture
+CRT_VIGNETTE_SIZE = 256         # enough samples for a smooth full-screen falloff
 PANEL_ROW_CENTER = 0.57         # row centre, as a share of the panel body
 
 
@@ -704,8 +706,19 @@ fun mx_paint(step) {
 }
 
 fun mx_tick() {
-  mx_caps_tick();
-  mx_feedback_tick();
+  # The password callback itself runs on every Plymouth refresh. Keep its
+  # steady-state path empty, and poll the one independent state here at a
+  # human-visible cadence instead of asking the renderer 50 times a second.
+  if (global.mx_dialog_on == 1) {
+    global.mx_caps_frames = global.mx_caps_frames + 1;
+    if (global.mx_caps_frames >= $CAPS_POLL_FRAMES) {
+      global.mx_caps_frames = 0;
+      mx_caps_tick();
+    }
+  }
+  if (global.mx_denied_frames > 0 || global.mx_granted_frames > 0) {
+    mx_feedback_tick();
+  }
 
   if (global.mx_step >= global.mx_end) return;
 
@@ -745,6 +758,7 @@ fun mx_tick() {
 global.mx_dialog_on = 0;
 global.mx_bullets = -1;
 global.mx_caps_state = -1;
+global.mx_caps_frames = 0;
 global.mx_percent = -1;
 # Whether the progress readout is on screen at all. It is NOT the same question
 # as "what is the percentage": see mx_progress.
@@ -977,30 +991,49 @@ fun mx_hide_dialog() {
   global.mx_dialog_on = 0;
   global.mx_bullets = -1;
   global.mx_caps_state = -1;
+  global.mx_caps_frames = 0;
   global.mx_denied_frames = 0;
+  global.mx_granted_frames = 0;
   mx_key_fill.sprite.SetOpacity(0);
   mx_caps.sprite.SetOpacity(0);
   mx_box.sprite.SetOpacity(0);
 }
 
 fun mx_password_callback(prompt, bullets) {
-  # Omarchy's own callback sets this, and its display_normal_callback needs it
-  # to know a password was asked for. Ours has to set it too.
-  global.password_shown = 1;
-  stop_fake_progress();
-  hide_progress_bar();
-  mx_bar_show(0);
-
   shown = bullets;
   if (shown > $KEY_CELLS) shown = $KEY_CELLS;
+  was_open = global.mx_dialog_on;
+  previous = global.mx_bullets;
+
+  # Plymouth calls this on every refresh while the prompt is open. The panel
+  # is static between keystrokes, so prepare it once instead of invalidating
+  # the complete panel and the hidden Omarchy controls 50 times a second.
+  if (was_open == 0) {
+    # Omarchy's normal callback needs this history flag once the disk opens.
+    global.password_shown = 1;
+    stop_fake_progress();
+    hide_progress_bar();
+    mx_bar_show(0);
+    global.mx_dialog_on = 1;
+    global.mx_caps_frames = 0;
+    mx_box.sprite.SetImage(mx_box.key_scaled);
+    mx_box.sprite.SetOpacity(1);
+    mx_caps_tick();
+  }
+
+  # The count is the only input state that affects pixels. A matching count
+  # means a refresh with no visible work, so return before touching sprites.
+  if (shown == previous) return;
+  global.mx_bullets = shown;
 
   if (shown > 0 && global.mx_denied_frames > 0) {
     # Typing resumed while the DENIED flash was still up: cut it short rather
     # than sit in front of what the user is typing right now.
     global.mx_denied_frames = 0;
+    mx_box.sprite.SetImage(mx_box.key_scaled);
   }
 
-  if (global.mx_dialog_on == 1 && shown == 0 && global.mx_bullets > 0 &&
+  if (was_open == 1 && shown == 0 && previous > 0 &&
       global.mx_denied_frames == 0) {
     # HEURISTIC, not a real signal -- see provider.json's //grantedDenied.
     # Plymouth re-asking after a rejected passphrase calls this with the same
@@ -1011,49 +1044,29 @@ fun mx_password_callback(prompt, bullets) {
     # See `mx_was_denied`'s own declaration for why GRANTED cannot be decided
     # from `password_shown` alone.
     global.mx_was_denied = 1;
-  } else {
-    mx_box.sprite.SetImage(mx_box.key_scaled);
-  }
-  mx_box.sprite.SetOpacity(1);
-
-  if (shown != global.mx_bullets) {
-    global.mx_bullets = shown;
-    if (shown < 1) {
-      # Crop() to zero width is not worth trusting, and an empty field is what
-      # "nothing typed yet" should look like anyway -- the panel and its
-      # caption stay on screen, the row itself stays empty.
-      mx_key_fill.sprite.SetOpacity(0);
-    } else {
-      # Real typing progress -- the passphrase field just grew by a character
-      # -- is the one event that un-arms a denial. `password_shown` cannot do
-      # this job on its own: this whole function runs on every refresh tick
-      # the dialog is up, not once per keystroke (the `shown != mx_bullets`
-      # guard right here exists for exactly that reason), and it sets
-      # `password_shown = 1` unconditionally at its own top every single one
-      # of those ticks. A flag reset inside the DENIED branch above would be
-      # re-armed by the very next tick's unconditional set, before
-      # mx_normal_callback ever gets a chance to read it -- proved by feeding
-      # this function a denial followed by repeated no-op ticks in a doctored
-      # preview and watching GRANTED paint anyway. `mx_was_denied` only ever
-      # changes on these two real events, never on a tick that changed
-      # nothing.
-      global.mx_was_denied = 0;
-      # Centred as a GROUP, not left-anchored: the typed dashes grow outward
-      # from the middle of the centred row, so one dot sits exactly
-      # in the centre rather than stranded off to one side of a wide box.
-      # The offset is a WHOLE number of cells from the row's own left
-      # edge, so every bright dash lands exactly on the shared grid: a
-      # fractional offset would park each dash between two cells, straddling them.
-      key_w = Math.Int(shown * global.mx_cell);
-      key_x = global.mx_pass_x + Math.Int((($KEY_CELLS - shown) / 2) * global.mx_cell);
-      mx_key_fill.sprite.SetPosition(key_x, global.mx_in_y, 10002);
-      mx_key_fill.sprite.SetImage(mx_dots.scaled.Crop(0, 0, key_w, global.mx_in_h));
-      mx_key_fill.sprite.SetOpacity(1);
-    }
+    mx_key_fill.sprite.SetOpacity(0);
+    return;
   }
 
-  global.mx_dialog_on = 1;
-  mx_caps_tick();
+  if (shown < 1) {
+    # Crop() to zero width is not worth trusting, and an empty field is what
+    # "nothing typed yet" should look like anyway -- the panel and its
+    # caption stay on screen, the row itself stays empty.
+    mx_key_fill.sprite.SetOpacity(0);
+    return;
+  }
+
+  # A real character is the only event that clears the denied history. The
+  # field then changes through one small crop, never through a panel redraw.
+  global.mx_was_denied = 0;
+  # Centred as a GROUP, not left-anchored: the typed dashes grow outward
+  # from the middle of the centred row, so one dash sits exactly in the
+  # centre rather than stranded off to one side of a wide box.
+  key_w = Math.Int(shown * global.mx_cell);
+  key_x = global.mx_pass_x + Math.Int((($KEY_CELLS - shown) / 2) * global.mx_cell);
+  mx_key_fill.sprite.SetPosition(key_x, global.mx_in_y, 10002);
+  mx_key_fill.sprite.SetImage(mx_dots.scaled.Crop(0, 0, key_w, global.mx_in_h));
+  mx_key_fill.sprite.SetOpacity(1);
 }
 
 fun mx_normal_callback() {
@@ -1225,6 +1238,7 @@ def typing_block(font, metrics):
         GLOW_ALPHA=LINE_GLOW_OPACITY,
         TEXT_X=TEXT_X, TEXT_Y=TEXT_Y, TEXT_WIDTH=TEXT_WIDTH,
         WIDEST_CELLS=metrics["WIDEST_CELLS"], LINE_ASPECT=metrics["LINE_ASPECT"],
+        CAPS_POLL_FRAMES=CAPS_POLL_FRAMES,
         LINE_LOAD="\n".join(load), TABLE="\n".join(table),
         BOOT_FIRST=slices["boot"][0], BOOT_END=slices["boot"][1],
         GATE=boot_gate, DISPATCH=dispatch or "# (this provider names no exit lines)")
@@ -1316,12 +1330,18 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
             f"Re-install the theme.")
     glow_hex = glow_hex or line_hex
 
-    # A two-row alpha mask, tiled only after Plymouth knows the native panel
-    # size. Baking lines into each text asset would alias whenever the script
-    # scales that asset at boot; this stays one real screen row at every size.
-    subprocess.run(["magick", "-size", "1x2", "xc:none", "-fill", "#000000",
-                    "-draw", "point 0,1", "-strip",
-                    str(target / "crt-scanline.png")], check=True)
+    # The reference falls off softly toward the screen edges. This is not a
+    # scanline grid or a phosphor mask: a low-opacity black vignette preserves
+    # the pure black background and leaves the text's pixels alone. Plymouth
+    # scales it only after it knows the native panel size, so it has no fixed
+    # monitor resolution and no repeating pattern.
+    vignette = str(target / "crt-vignette.png")
+    subprocess.run([
+        "magick", "-size", f"{CRT_VIGNETTE_SIZE}x{CRT_VIGNETTE_SIZE}", "xc:#000000",
+        "(", "-size", f"{CRT_VIGNETTE_SIZE}x{CRT_VIGNETTE_SIZE}", "radial-gradient:",
+        "-negate", "-evaluate", "Multiply", "0.65", ")",
+        "-alpha", "off", "-compose", "CopyOpacity", "-composite", "-strip", vignette,
+    ], check=True)
 
     size = 120                      # generous: everything is only scaled DOWN
 
@@ -1831,15 +1851,15 @@ def patch(text, font, metrics):
     text += dialog_block(metrics)
     text += f"""
 
-# Optional phosphor scanlines. The panel callbacks are registered above first,
-# so a renderer without tiled-image support keeps the complete password flow.
-mx_crt.image = Image("crt-scanline.png");
-if (mx_crt.image.GetWidth() > 0 && mx_crt.image.GetHeight() > 0) {{
-  mx_crt.tiled = mx_crt.image.Tile(global.mx_w, global.mx_h);
-  if (mx_crt.tiled.GetWidth() > 0 && mx_crt.tiled.GetHeight() > 0) {{
-    mx_crt.sprite = Sprite(mx_crt.tiled);
-    mx_crt.sprite.SetPosition(0, 0, 11000);
-    mx_crt.sprite.SetOpacity({CRT_SCANLINE_OPACITY});
+# Optional CRT vignette. The panel callbacks are registered above first, so a
+# renderer that cannot scale this decorative asset keeps the password flow.
+mx_vignette.image = Image("crt-vignette.png");
+if (mx_vignette.image.GetWidth() > 0 && mx_vignette.image.GetHeight() > 0) {{
+  mx_vignette.scaled = mx_vignette.image.Scale(global.mx_w, global.mx_h);
+  if (mx_vignette.scaled.GetWidth() > 0 && mx_vignette.scaled.GetHeight() > 0) {{
+    mx_vignette.sprite = Sprite(mx_vignette.scaled);
+    mx_vignette.sprite.SetPosition(0, 0, 11000);
+    mx_vignette.sprite.SetOpacity({CRT_VIGNETTE_OPACITY});
   }}
 }}
 """

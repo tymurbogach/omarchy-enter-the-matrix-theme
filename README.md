@@ -195,6 +195,9 @@ uninstall.
 08-digital-city.jpg
 09-matrix-crew.jpg
 10-neo-room.jpg
+11-falling-code.jpg      green code on black
+12-mono-rain.jpg         monochrome rain scene
+13-after-hours.jpg       dark green corridor
 live/0-live-rain.png     the rain: the pack adds it, first in the list
 ```
 
