@@ -197,6 +197,25 @@ for needle in (
 for needle in ('crt-phosphor', 'apply_phosphor', 'crt-scanline', 'CRT_SCANLINE'):
     if needle in plymouth:
         bad(f"derive-plymouth.py keeps removed CRT texture code ({needle})")
+for needle in (
+    'property bool screensaverOpen: false',
+    'function refreshScreensaver()',
+    'target: ToplevelManager.toplevels',
+    'function onValuesChanged() { root.refreshScreensaver() }',
+):
+    if needle not in service:
+        bad(f"Service.qml does not refresh the screensaver overlay ({needle!r})")
+rain = (root / "MatrixRain.qml").read_text()
+for needle in (
+    'readonly property int resumeRestartThresholdMs: 1000',
+    'now - root.lastFrameAt >= root.resumeRestartThresholdMs',
+    'onRunningChanged: if (!running) root.lastFrameAt = 0',
+):
+    if needle not in rain:
+        bad(f"MatrixRain.qml does not restart after resume ({needle!r})")
+lock_deriver = (root / "lib/derive-lock.py").read_text()
+if 'onRunningChanged: if (running) restart()' not in lock_deriver:
+    bad("derive-lock.py does not restart rain for each lock session")
 callback = plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)')
 crt = plymouth.find('Optional CRT vignette')
 if callback == -1 or crt == -1 or callback > crt:

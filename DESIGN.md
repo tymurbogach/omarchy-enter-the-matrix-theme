@@ -18,6 +18,12 @@ applies one minimal change: it drops the blurred wallpaper and puts the rain
 there. The other ~200 lines are yours. A `post-update.d` hook derives it again
 after every `omarchy update`, so Omarchy's fixes keep arriving.
 
+Every lock session starts a new fall. `MatrixRain` also compares the first
+rendered frame after a gap against wall-clock time. A gap of one second while
+its surface stays active means suspend, so opening the lid never reveals an old
+frozen frame. A normal battery pause sets `running` false and keeps its frame.
+There is no background timer or resume service.
+
 If the block to replace does not appear exactly once, the script **aborts and
 tells you** rather than leaving things half done.
 

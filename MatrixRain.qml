@@ -58,6 +58,13 @@ Item {
   property real period: 3600
   property real elapsed: 0
 
+  // The render loop pauses during suspend. Keep the wall-clock time of the
+  // last rendered frame so the first frame after a lid-open resume can begin a
+  // fresh fall rather than reveal an old, frozen field. This is deliberately
+  // not a timer: while the rain is hidden there is no work at all.
+  property double lastFrameAt: 0
+  readonly property int resumeRestartThresholdMs: 1000
+
   // `birth` is the OTHER clock, and it exists because a cold start cannot be
   // expressed in the wrapped one: anything keyed to `elapsed` would happen
   // again at every wrap. This one counts from the moment the surface appeared
@@ -78,7 +85,13 @@ Item {
   function restart() {
     root.elapsed = 0
     root.birth = 0
+    root.lastFrameAt = Date.now()
   }
+
+  // A normal wallpaper pause sets `running` false when a window covers it on
+  // battery. Forget that timestamp, so uncovering the desktop continues the
+  // same rain. Suspend leaves `running` true, which the first frame detects.
+  onRunningChanged: if (!running) root.lastFrameAt = 0
 
   Image {
     id: atlasImage
@@ -120,6 +133,13 @@ Item {
     running: root.running
     property real accumulated: 0
     onTriggered: {
+      var now = Date.now()
+      if (root.lastFrameAt > 0 &&
+          now - root.lastFrameAt >= root.resumeRestartThresholdMs) {
+        root.restart()
+        accumulated = 0
+      }
+      root.lastFrameAt = now
       accumulated += frameTime
       var step = 1 / Math.max(1, root.fps)
       if (accumulated >= step) {

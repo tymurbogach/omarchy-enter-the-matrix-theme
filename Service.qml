@@ -53,12 +53,27 @@ Item {
   // (shell.qml:739-744) that cannot see Stay Awake, the timings or the lock.
   // That monitor never started, and no screensaver came up at all.
   readonly property string screensaverAppId: "org.omarchy.screensaver"
-  readonly property bool screensaverOpen: {
+  property bool screensaverOpen: false
+
+  // Keep an explicit state rather than relying on a binding through an array.
+  // Quickshell emits valuesChanged whenever a toplevel maps or unmaps, including
+  // when the compositor restores its surfaces after the lid opens. That starts
+  // the overlay in the same event turn as Omarchy's screensaver window.
+  function refreshScreensaver() {
+    var open = false
     var toplevels = ToplevelManager.toplevels.values
     for (var i = 0; i < toplevels.length; i++) {
-      if (toplevels[i].appId === root.screensaverAppId) return true
+      if (toplevels[i].appId === root.screensaverAppId) {
+        open = true
+        break
+      }
     }
-    return false
+    root.screensaverOpen = open
+  }
+
+  Connections {
+    target: ToplevelManager.toplevels
+    function onValuesChanged() { root.refreshScreensaver() }
   }
 
   // The current background is a symlink, and omarchy-theme-bg-set replaces it
@@ -121,7 +136,10 @@ Item {
     }
   }
 
-  Component.onCompleted: root.refreshBackground()
+  Component.onCompleted: {
+    root.refreshBackground()
+    root.refreshScreensaver()
+  }
 
   // --- layer 1: the live wallpaper ---------------------------------------
   Variants {
