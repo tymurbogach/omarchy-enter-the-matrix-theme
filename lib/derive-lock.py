@@ -50,10 +50,6 @@ REPLACEMENT = f"""    // The lock's background is the rain, not the blurred wall
     {RAIN_COMPONENT} {{
       anchors.fill: parent
       running: root.loadBackground
-      // A new lock or preview starts with a new fall. The component remains
-      // alive between lock sessions, so construction alone would resume an old
-      // clock after opening the lid.
-      onRunningChanged: if (running) restart()
     }}
 """
 
