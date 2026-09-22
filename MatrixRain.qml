@@ -59,9 +59,8 @@ Item {
   property real elapsed: 0
 
   // A new lock, screensaver, wallpaper or resume holds black before the first
-  // columns arrive. On the wallpaper the panel is transparent, so the hold
-  // shows the still underneath, not black: the background still answers at
-  // once, and only the rain waits out the second.
+  // columns arrive. Every panel behind the rain is black, so the hold is
+  // black on all three surfaces.
   property int startDelayMs: 1000
   readonly property int suspendGapMs: 1000
   property bool delayingStart: false

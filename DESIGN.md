@@ -18,12 +18,13 @@ applies one minimal change: it drops the blurred wallpaper and puts the rain
 there. The other ~200 lines are yours. A `post-update.d` hook derives it again
 after every `omarchy update`, so Omarchy's fixes keep arriving.
 
-The lock, the screensaver and the desktop all hold for one second before a
-fresh fall. The same lead-in starts again after a suspend gap, so opening the
-lid never shows an old frame. On the desktop the panel is transparent, so the
-hold shows the rain's still underneath: the background answers at once, and
-only the rain waits. The rain runs always while the rain is the background,
-on mains and on battery, windows open or not.
+The lock, the screensaver and the desktop all hold black for one second
+before a fresh fall. The same lead-in starts again after a suspend gap, so
+opening the lid never shows an old frame. Every panel behind the rain is
+black; the rain's still keeps only its other three jobs (carousel thumbnail,
+`-live-` marker and fallback while the plugin is off). The rain runs always
+while the rain is the background, on mains and on battery, windows open
+or not.
 
 If the block to replace does not appear exactly once, the script **aborts and
 tells you** rather than leaving things half done.

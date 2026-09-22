@@ -227,6 +227,10 @@ if service.count('onRunningChanged: if (running) restart()') < 2:
 for needle in ('UPower', 'windowsHere'):
     if needle in service:
         bad(f"Service.qml keeps a battery brake ({needle}): the rain runs always")
+# Both rain panels are black: while the shader hides during the one-second
+# hold, a transparent panel would show Omarchy's still instead of black.
+if service.count('color: "black"') < 2:
+    bad('Service.qml does not hold black behind the desktop and the screensaver')
 lock_deriver = (root / "lib/derive-lock.py").read_text()
 for needle in ('startDelayMs: 1000', 'onRunningChanged: if (running) restart()'):
     if needle not in lock_deriver:

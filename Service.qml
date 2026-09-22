@@ -131,7 +131,12 @@ Item {
 
       screen: modelData
       anchors { top: true; bottom: true; left: true; right: true }
-      color: "transparent"
+      // Black, not transparent: while the rain holds its first second the
+      // shader is hidden, and a transparent panel would show Omarchy's still
+      // underneath instead of black. The shader paints opaque when it rains,
+      // so this black never leaks into the normal display. Clicks still pass
+      // through with `mask: Region {}` below; colour does not affect input.
+      color: "black"
       visible: root.rainIsBackground
 
       // The rain starts from black every time the surface appears, rather than
