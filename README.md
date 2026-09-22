@@ -58,7 +58,7 @@ There is nothing to switch. Omarchy's own menus decide, and the rain follows:
 
 | Piece | What decides it |
 |---|---|
-| Desktop | **Style › Background.** The rain is one background in the list, and any other background stops it. A theme set starts on the rain. On mains it always rains; on battery, only while no window is on the active workspace. |
+| Desktop | **Style › Background.** The rain is one background in the list, and any other background stops it. A theme set starts on the rain. It always rains while the rain is the background, on mains and on battery, with windows open or not. |
 | Screensaver | **Omarchy.** The rain covers Omarchy's own screensaver whenever Omarchy opens it. Your idle timing, Stay Awake, the key that ends it and the lock that follows it all stay Omarchy's. |
 | Lock | **The theme.** Rain behind the password field whenever the theme is on. The lock is derived from your own, never shipped as a copy, so Omarchy's PAM and fingerprint flows keep arriving. |
 | Boot | **Style › Unlock.** The Enter the Matrix card types the lines from the film before login, and two more on the way out, different for a shutdown and for a reboot. Any other card boots that theme, with nothing of Matrix left. Either way it is one rebuild of the initramfs, and it asks for your password. |

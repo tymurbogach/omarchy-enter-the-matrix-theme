@@ -58,6 +58,16 @@ Item {
   property real period: 3600
   property real elapsed: 0
 
+  // A new lock, screensaver, wallpaper or resume holds black before the first
+  // columns arrive. On the wallpaper the panel is transparent, so the hold
+  // shows the still underneath, not black: the background still answers at
+  // once, and only the rain waits out the second.
+  property int startDelayMs: 1000
+  readonly property int suspendGapMs: 1000
+  property bool delayingStart: false
+  property double delayStartedAt: 0
+  property double lastFrameAt: 0
+
   // `birth` is the OTHER clock, and it exists because a cold start cannot be
   // expressed in the wrapped one: anything keyed to `elapsed` would happen
   // again at every wrap. This one counts from the moment the surface appeared
@@ -69,16 +79,57 @@ Item {
   readonly property real birthMax: 13.0
   property real birth: 0
 
-  // Start over: black screen, then the columns arrive from the top.
+  // Start over: hold black, then let the columns arrive from the top.
   //
-  // Deliberately NOT tied to `running`. On battery the wallpaper's clock stops
-  // whenever a window covers the desktop, and there freezing and resuming is
-  // exactly what is wanted. What restarts the rain is the surface BECOMING
-  // VISIBLE, which only the caller knows about.
+  // Every surface restarts into the hold when it starts running again: the
+  // callers restart on visible, and on running where running can come back
+  // (the lock, the screensaver, the wallpaper). The rain runs always while
+  // its surface asks for it, on mains and on battery alike.
   function restart() {
     root.elapsed = 0
     root.birth = 0
+    clock.accumulated = 0
+    root.lastFrameAt = 0
+
+    if (root.startDelayMs <= 0 || !root.running) {
+      root.delayingStart = false
+      return
+    }
+
+    root.delayingStart = true
+    root.delayStartedAt = Date.now()
+    startTimer.restart()
   }
+
+  Timer {
+    id: startTimer
+    interval: Math.max(0, root.startDelayMs)
+    repeat: false
+    onTriggered: {
+      // A Timer that expired while the machine slept fires as soon as it
+      // resumes. Begin the whole visible second again in that case.
+      if (Date.now() - root.delayStartedAt >= root.startDelayMs + root.suspendGapMs) {
+        root.restart()
+        return
+      }
+      root.delayingStart = false
+      root.lastFrameAt = Date.now()
+    }
+  }
+
+  // Hidden surfaces must not keep a lead-in timer alive. A caller restarts the
+  // rain when it makes its surface visible or running again.
+  onRunningChanged: if (!running) {
+    startTimer.stop()
+    root.delayingStart = false
+    root.lastFrameAt = 0
+  }
+
+  // A surface that is already running at creation never sees a running change.
+  // The first lock after a shell start is exactly that: restart into the
+  // lead-in instead of raining immediately. A hidden surface opts out through
+  // running=false.
+  Component.onCompleted: if (root.running && root.startDelayMs > 0) root.restart()
 
   Image {
     id: atlasImage
@@ -89,6 +140,9 @@ Item {
 
   ShaderEffect {
     anchors.fill: parent
+    // The hold is total black, not the birth gate alone: at birth=0 a column
+    // whose first cycle starts at once would already peek through.
+    visible: !root.delayingStart
     fragmentShader: Qt.resolvedUrl("matrix.frag.qsb")
 
     // The names have to match those in the shader's uniform block.
@@ -117,9 +171,17 @@ Item {
   // `elapsed` at `fps`: the shader sees 30 steps per second, not 144.
   FrameAnimation {
     id: clock
-    running: root.running
+    running: root.running && !root.delayingStart
     property real accumulated: 0
     onTriggered: {
+      var now = Date.now()
+      // Suspend pauses the render loop without changing `running`. Do not add
+      // its large frameTime to the shader clock. Restart the black lead-in.
+      if (root.lastFrameAt > 0 && now - root.lastFrameAt >= root.suspendGapMs) {
+        root.restart()
+        return
+      }
+      root.lastFrameAt = now
       accumulated += frameTime
       var step = 1 / Math.max(1, root.fps)
       if (accumulated >= step) {

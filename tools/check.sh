@@ -132,6 +132,18 @@ elif not (root / live).is_file():
 stray = sorted(p.name for p in (root / "backgrounds").glob("*-live-*"))
 if stray:
     bad(f"backgrounds/ holds {stray}: the rain's still goes in liveBackground only")
+# The still is the thumbnail, the marker and what the desktop shows during the
+# one-second lead-in, so it must stay a 16:10 superset in the live palette.
+import struct
+try:
+    with open(root / live, "rb") as fh:
+        header = fh.read(24)
+    if header[12:16] != b"IHDR":
+        bad(f"liveBackground {live} is not a PNG")
+    elif struct.unpack(">II", header[16:24]) != (3840, 2400):
+        bad(f"liveBackground {live} is not 3840x2400")
+except OSError:
+    pass
 # Keep the curated carousel free of byte-identical copies. A duplicate makes
 # the background menu longer without offering another scene.
 backgrounds = root / "backgrounds"
@@ -197,6 +209,28 @@ for needle in (
 for needle in ('crt-phosphor', 'apply_phosphor', 'crt-scanline', 'CRT_SCANLINE'):
     if needle in plymouth:
         bad(f"derive-plymouth.py keeps removed CRT texture code ({needle})")
+rain = (root / "MatrixRain.qml").read_text()
+for needle in (
+    'property int startDelayMs: 1000',
+    'property bool delayingStart: false',
+    'now - root.lastFrameAt >= root.suspendGapMs',
+    'root.restart()\n        return',
+    'Component.onCompleted: if (root.running',
+    'visible: !root.delayingStart',
+):
+    if needle not in rain:
+        bad(f"MatrixRain.qml does not preserve the delayed restart ({needle!r})")
+if service.count('startDelayMs: 1000') < 2 or 'startDelayMs: 0' in service:
+    bad("Service.qml does not hold the desktop and the screensaver for one second each")
+if service.count('onRunningChanged: if (running) restart()') < 2:
+    bad("Service.qml does not restart the hold once running is true (desktop and screensaver)")
+for needle in ('UPower', 'windowsHere'):
+    if needle in service:
+        bad(f"Service.qml keeps a battery brake ({needle}): the rain runs always")
+lock_deriver = (root / "lib/derive-lock.py").read_text()
+for needle in ('startDelayMs: 1000', 'onRunningChanged: if (running) restart()'):
+    if needle not in lock_deriver:
+        bad(f"derive-lock.py does not restart with the black lead-in ({needle!r})")
 callback = plymouth.find('Plymouth.SetDisplayPasswordFunction(mx_password_callback)')
 crt = plymouth.find('Optional CRT vignette')
 if callback == -1 or crt == -1 or callback > crt:

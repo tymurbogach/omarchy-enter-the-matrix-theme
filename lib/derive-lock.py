@@ -49,7 +49,10 @@ REPLACEMENT = f"""    // The lock's background is the rain, not the blurred wall
     // again from Omarchy's LockView.qml on every `omarchy update`.
     {RAIN_COMPONENT} {{
       anchors.fill: parent
+      // Keep black for one second, then start a fresh fall for each lock.
+      startDelayMs: 1000
       running: root.loadBackground
+      onRunningChanged: if (running) restart()
     }}
 """
 

@@ -18,6 +18,13 @@ applies one minimal change: it drops the blurred wallpaper and puts the rain
 there. The other ~200 lines are yours. A `post-update.d` hook derives it again
 after every `omarchy update`, so Omarchy's fixes keep arriving.
 
+The lock, the screensaver and the desktop all hold for one second before a
+fresh fall. The same lead-in starts again after a suspend gap, so opening the
+lid never shows an old frame. On the desktop the panel is transparent, so the
+hold shows the rain's still underneath: the background answers at once, and
+only the rain waits. The rain runs always while the rain is the background,
+on mains and on battery, windows open or not.
+
 If the block to replace does not appear exactly once, the script **aborts and
 tells you** rather than leaving things half done.
 
@@ -329,7 +336,7 @@ here, rather than pretending the hex came off a frame.
 ```bash
 ./tools/generate-brand.py                # unlock, preview-unlock and preview
 ./tools/generate-atlas.py               # the shader's glyph atlas
-./tools/generate-backgrounds.py --out /tmp/x.png --seed 42 --density 0.7
+./tools/generate-backgrounds.py --out /tmp/x.png --seed 42 --density 0.55
 
 # recompile the shader (qsb is not on PATH; qt6-shadertools puts it here)
 /usr/lib/qt6/bin/qsb --glsl 300es,330 --hlsl 50 --msl 12 \

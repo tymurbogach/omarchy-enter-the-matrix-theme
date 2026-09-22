@@ -1,8 +1,6 @@
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Hyprland
-import Quickshell.Services.UPower
 import QtQuick
 
 // The Matrix pack's plugin: the same rain on the desktop and over Omarchy's
@@ -155,37 +153,18 @@ Item {
       // reach Omarchy's desktop, which is what opens its menu.
       mask: Region {}
 
-      // How many windows are on the active workspace OF THIS screen. The panel
-      // is already per-screen, so the brake is per-screen too.
-      readonly property int windowsHere: {
-        try {
-          var monitors = Hyprland.monitors.values
-          for (var i = 0; i < monitors.length; i++) {
-            if (monitors[i].name !== wallpaperPanel.modelData.name) continue
-            var workspace = monitors[i].activeWorkspace
-            if (!workspace || !workspace.lastIpcObject) return 0
-            return workspace.lastIpcObject.windows || 0
-          }
-        } catch (e) {
-          // If the shape of the IPC object ever changes, err on the cautious
-          // side and assume something is covering the desktop.
-          try { return ToplevelManager.toplevels.values.length } catch (e2) { return 1 }
-        }
-        return 0
-      }
-
       MatrixRain {
         id: wallpaperRain
         anchors.fill: parent
+        startDelayMs: 1000
         // The scanline is drawn in NATIVE pixels, so it needs this screen's
         // ratio and not the one the shell happens to be attached to.
         dpr: wallpaperPanel.modelData.devicePixelRatio
-        // On mains it always rains; on battery, only while the desktop is
-        // visible. Opening any window freezes it and the GPU drops to zero.
-        // Note this stops the clock without restarting it: a frozen wallpaper
-        // is meant to carry on where it left off, which is why restart() hangs
-        // off `visible` above and not off `running`.
-        running: wallpaperPanel.visible && (!UPower.onBattery || wallpaperPanel.windowsHere === 0)
+        // Always raining while the rain is the background, on mains and on
+        // battery, windows open or not. Restart with the hold whenever the
+        // rain starts running again, the same as the screensaver below.
+        running: wallpaperPanel.visible
+        onRunningChanged: if (running) restart()
       }
     }
   }
@@ -221,7 +200,15 @@ Item {
         id: screensaverRain
         anchors.fill: parent
         dpr: screensaverPanel.modelData.devicePixelRatio
+        startDelayMs: 1000
         running: screensaverPanel.visible
+        // `visible` and `running` flip in the same pass and the order is not
+        // guaranteed: if onVisibleChanged runs first, restart() still sees
+        // running=false and skips the hold. Restart here too, where running
+        // is already true; two restarts in one pass are idempotent. The
+        // wallpaper carries the same handler: the rain runs always while
+        // the rain is the background.
+        onRunningChanged: if (running) restart()
       }
     }
   }
