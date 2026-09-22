@@ -14,6 +14,9 @@ DERIVED="$SHARE_DIR/bin/omarchy-screensaver"
 ENV_DIR="$HOME/.config/uwsm/env.d"
 ENV_FILE="$ENV_DIR/50-omarchy-rain-path.sh"
 ENV_MARKER="# Managed by omarchy-rain."
+HYPR_AUTOSTART="$HOME/.config/hypr/autostart.lua"
+HYPR_BEGIN="-- BEGIN omarchy-rain (managed by install.sh)"
+HYPR_END="-- END omarchy-rain"
 OWNERSHIP_FILE="$SHARE_DIR/.omarchy-rain"
 
 [[ ${1:-} == "" || ${1:-} == "--sync" ]] || {
@@ -77,4 +80,39 @@ $ENV_MARKER
 export PATH="\$HOME/.local/bin:\$PATH"
 EOF
 
-echo "omarchy-rain: installed continuous Matrix rain. Log out and log in before testing."
+# Omarchy's Hyprland defaults put $OMARCHY_PATH/bin first after UWSM has
+# loaded env.d. Reapply the user-bin priority after those defaults. A marked
+# block lets uninstall remove only what this installer owns.
+mkdir -p "$(dirname "$HYPR_AUTOSTART")"
+python3 - "$HYPR_AUTOSTART" "$HYPR_BEGIN" "$HYPR_END" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+begin, end = sys.argv[2:]
+block = f'''{begin}
+local omarchy_rain_local_bin = os.getenv("HOME") .. "/.local/bin"
+local omarchy_rain_paths = {{}}
+for entry in (os.getenv("PATH") or ""):gmatch("[^:]+") do
+  if entry ~= omarchy_rain_local_bin then table.insert(omarchy_rain_paths, entry) end
+end
+table.insert(omarchy_rain_paths, 1, omarchy_rain_local_bin)
+hl.env("PATH", table.concat(omarchy_rain_paths, ":"))
+{end}
+'''
+
+source = path.read_text() if path.exists() else ""
+starts = source.count(begin)
+ends = source.count(end)
+if starts != ends:
+    raise SystemExit("omarchy-rain: malformed managed block in " + str(path))
+if starts > 1:
+    raise SystemExit("omarchy-rain: repeated managed block in " + str(path))
+if starts:
+    before, remainder = source.split(begin, 1)
+    _, after = remainder.split(end, 1)
+    source = before.rstrip() + "\n\n" + after.lstrip()
+path.write_text(source.rstrip() + "\n\n" + block)
+PY
+
+echo "omarchy-rain: installed continuous Matrix rain. Run hyprctl reload before testing."
