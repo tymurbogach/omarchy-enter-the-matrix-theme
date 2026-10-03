@@ -16,12 +16,14 @@ native lock alone. A half-patched lock is a machine that will not unlock.
 """
 
 import filecmp
+import getpass
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Loaded by path rather than by name: this file is also exec'd straight from a
@@ -119,13 +121,13 @@ def is_ours(directory):
 
 
 def existing_clone():
-    """The lock clone to derive into: ours first, then any raw clone.
+    """The lock clone to derive into: ours first, then any foreign clone.
 
-    clonedFrom is the discovery and is_ours the ownership verdict. A raw clone
-    that this run just made has neither mark yet and still has to be found.
-    Ours comes back first, so a foreign clone that sorts earlier cannot hide it
-    and stop `lock on` with a refusal that is not true."""
-    first_raw = (None, None)
+    clonedFrom is the discovery and is_ours the ownership verdict. Ours comes
+    back first, so a foreign clone that sorts earlier cannot hide it and stop
+    `lock on` with a refusal that is not true.
+    """
+    first_foreign = (None, None)
     for directory in sorted(PLUGINS.glob("*.lock")):
         manifest = directory / "manifest.json"
         if not manifest.is_file():
@@ -138,9 +140,15 @@ def existing_clone():
             continue
         if is_ours(directory):
             return directory, data["id"]
-        if first_raw[0] is None:
-            first_raw = (directory, data["id"])
-    return first_raw
+        if first_foreign[0] is None:
+            first_foreign = (directory, data["id"])
+    return first_foreign
+
+
+def clone_id():
+    """The id Omarchy's clone command would assign to omarchy.lock."""
+    user = os.environ.get("USER") or getpass.getuser()
+    return f"{user}.lock"
 
 
 def rain_source():
@@ -150,6 +158,20 @@ def rain_source():
         if all((candidate / name).is_file() for name in RAIN_FILES):
             return candidate
     die(f"cannot find {RAIN_QML}; install the {PLUGIN_ID} plugin first")
+
+
+def clone_manifest(plugin_id):
+    """Build the clone manifest from Omarchy's installed lock manifest."""
+    manifest_data = json.loads((SOURCE / "manifest.json").read_text())
+    source_id = manifest_data["id"]
+    source_name = manifest_data.get("name", source_id)
+    manifest_data["id"] = plugin_id
+    manifest_data["name"] = f"My {source_name}"
+    omarchy = manifest_data.setdefault("omarchy", {})
+    omarchy["clonedFrom"] = source_id
+    omarchy["derivedBy"] = PROVIDER["cli"]
+    omarchy.pop("clonePaths", None)
+    return manifest_data
 
 
 def stage_clone(target, plugin_id, rain):
@@ -177,53 +199,48 @@ def stage_clone(target, plugin_id, rain):
     shutil.rmtree(staging, ignore_errors=True)
     shutil.rmtree(retired, ignore_errors=True)
     staging.mkdir(parents=True)
+    try:
+        # Always start from Omarchy's sources: that brings an old clone up to
+        # date and prevents a second patch on top of the first one.
+        for source_file in SOURCE.iterdir():
+            if source_file.name != "manifest.json":
+                shutil.copy2(source_file, staging / source_file.name)
 
-    # Always start from Omarchy's sources: that brings an old clone up to date
-    # and stops the patch from being applied twice on top of itself.
-    for source_file in SOURCE.iterdir():
-        if source_file.name == "manifest.json":
-            continue  # the clone's carries its own id and clonedFrom; keep it
-        shutil.copy2(source_file, staging / source_file.name)
+        # Match Omarchy's clone manifest before we publish anything. The
+        # derivedBy mark records the owner of this generated clone.
+        (staging / "manifest.json").write_text(
+            json.dumps(clone_manifest(plugin_id), indent=2) + "\n"
+        )
 
-    # The clone's own manifest, plus a marker saying who rebuilds it. A backup
-    # tool has no other way to tell a derived directory from a hand-made one,
-    # and freezing a copy of this is precisely what the derivation exists to
-    # avoid: the frozen copy stops receiving Omarchy's own lock-screen fixes.
-    # omarchy-replicant reads omarchy.derivedBy and leaves the directory alone.
-    manifest_data = json.loads((target / "manifest.json").read_text())
-    manifest_data.setdefault("omarchy", {})["derivedBy"] = PROVIDER["cli"]
-    (staging / "manifest.json").write_text(json.dumps(manifest_data, indent=2) + "\n")
+        for name in RAIN_FILES:
+            shutil.copy2(rain / name, staging / name)
 
-    for name in RAIN_FILES:
-        shutil.copy2(rain / name, staging / name)
+        lock_view = staging / "LockView.qml"
+        lock_view.write_text(patch(lock_view.read_text()))
 
-    lock_view = staging / "LockView.qml"
-    lock_view.write_text(patch(lock_view.read_text()))
+        # Validate before publication. A failed clone never replaces the one
+        # in use, so Omarchy's native lock remains the safe fallback.
+        if shutil.which("omarchy-plugin-validate"):
+            if subprocess.run(["omarchy-plugin-validate", str(staging)],
+                              capture_output=True).returncode != 0:
+                die(f"the derived lock does not pass Omarchy's validation.\n"
+                    f"  Your current lock at {target} is untouched.")
 
-    # Validated BEFORE it goes live, for the same reason install.sh does it: a
-    # folder that fails validation must never be the one the shell picks up.
-    # Missing validator is not a reason to abort a derive -- but a failing one
-    # is, and the clone already in place stays exactly as it was.
-    if shutil.which("omarchy-plugin-validate"):
-        if subprocess.run(["omarchy-plugin-validate", str(staging)],
-                          capture_output=True).returncode != 0:
-            shutil.rmtree(staging, ignore_errors=True)
-            die(f"the derived lock does not pass Omarchy's validation.\n"
-                f"  Your current lock at {target} is untouched.")
+        # Every doctor derives again, and the result is usually what is live
+        # already. An identical result stays in the hidden staging directory.
+        if target.exists() and same_tree(staging, target):
+            return False
 
-    # Every doctor derives again, and the result is usually what is live
-    # already. A swap then only reloads the lock plugin in the running shell,
-    # so an identical result stays in staging and goes.
-    if same_tree(staging, target):
+        # Renaming a complete hidden directory gives Omarchy one watcher event.
+        # On an update, retire the old directory first to avoid a delete event
+        # for each file. A first derive has no live directory to retire.
+        if target.exists():
+            os.replace(target, retired)
+        os.replace(staging, target)
+        shutil.rmtree(retired, ignore_errors=True)
+        return True
+    finally:
         shutil.rmtree(staging, ignore_errors=True)
-        return False
-
-    # Two renames rather than `rm -rf target; mv staging target`: the delete
-    # would be one watcher event per file, which is the burst being avoided.
-    os.replace(target, retired)
-    os.replace(staging, target)
-    shutil.rmtree(retired, ignore_errors=True)
-    return True
 
 
 def same_tree(a, b):
@@ -246,6 +263,21 @@ def enabled(plugin_id):
         return False
 
 
+def discovered(plugin_id):
+    """Wait for Omarchy's watcher to register one atomically published clone."""
+    for _ in range(40):
+        try:
+            listed = subprocess.run(["omarchy-plugin-list", "--json"], check=True,
+                                    capture_output=True, text=True).stdout
+            if any(p.get("id") == plugin_id for p in json.loads(listed)):
+                return True
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            pass
+        # Match Omarchy's clone discovery window without forcing a rescan.
+        time.sleep(0.05)
+    return False
+
+
 def main():
     if not (SOURCE / "LockView.qml").is_file():
         die(f"cannot find Omarchy's lock at {SOURCE}")
@@ -255,47 +287,31 @@ def main():
 
     created = target is None
     if created:
-        # Same reasoning as derive-plymouth: a traceback here reads as a broken
-        # pack. This one cannot lock anybody out -- no clone means Omarchy's own
-        # lock is still the enabled one -- but say so plainly.
-        try:
-            subprocess.run(["omarchy-plugin-clone", "omarchy.lock"], check=True)
-        except (OSError, subprocess.CalledProcessError) as failure:
-            die(f"could not clone Omarchy's lock ({failure}).\n"
-                f"  Your native lock is untouched and still enabled.")
-        target, plugin_id = existing_clone()
-        if target is None:
-            die("the lock clone did not appear after creating it")
-        print(f"Cloned Omarchy's lock as {plugin_id}")
+        plugin_id = clone_id()
+        target = PLUGINS / plugin_id
+        if target.exists() or target.is_symlink():
+            die(f"{target} already exists and is not a lock clone. Rename it or "
+                "remove it yourself first.")
     elif not is_ours(target):
         die(f"{target} is a lock clone of yours, not of this pack -- it "
             f"is not marked as derived by {PROVIDER['cli']} and carries "
             f"no {RAIN_QML}. Rename it or remove it yourself first; "
             f"deriving over it would patch your own lock.")
+    elif target.is_symlink():
+        die(f"{target} is a symlink. Replace it with a directory before "
+            "deriving the lock.")
 
-    try:
-        changed = stage_clone(target, plugin_id, rain)
-    except SystemExit:
-        # A FIRST derive that cannot patch hands the lock straight back. Left in
-        # place, the raw clone stays enabled with Omarchy's own disabled by the
-        # clone -- an unpatched lock that `status` cannot tell apart from ours.
-        # `plugin remove` re-enables omarchy.lock (cloneSourceRestores), which
-        # is exactly the state this run started from.
-        if created:
-            subprocess.run(["omarchy-plugin-remove", plugin_id, "--yes"],
-                           check=False, capture_output=True)
-            if existing_clone()[0] is not None:
-                subprocess.run(["omarchy-plugin-remove", plugin_id],
-                               check=False, capture_output=True)
-        raise
+    changed = stage_clone(target, plugin_id, rain)
 
     # The same lock, already in charge: nothing to tell the shell. After
     # `omarchy refresh shell` the clone is on disk but not enabled, so the
     # enable below still runs then.
     if not created and not changed and enabled(plugin_id):
         return
-    subprocess.run(["omarchy-shell", "shell", "rescanPlugins"],
-                   check=False, capture_output=True)
+    if not discovered(plugin_id):
+        die(f"Omarchy did not discover {plugin_id} after publication.\n"
+            "  Your native lock remains enabled. Run 'omarchy restart shell' "
+            "and try again.")
     subprocess.run(["omarchy-plugin-enable", plugin_id], check=False, capture_output=True)
     print(f"Lock derived at {target} (from {SOURCE})")
 

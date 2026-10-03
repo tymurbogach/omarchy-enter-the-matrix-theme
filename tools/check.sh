@@ -372,6 +372,64 @@ assert not m.is_ours(tmp / "plugins/other.lock"), "non-clone counts as ours"
 target, _ = m.existing_clone()
 assert target is not None, "discovery finds no clone at all"
 assert m.is_ours(target), f"discovery prefers a foreign clone over ours: {target}"
+
+# The first Matrix derive must publish a complete clone itself. The old route
+# published a raw clone through omarchy-plugin-clone, then patched it after the
+# shell had activated it. Use a small installed-lock fixture to cover creation,
+# re-derivation of an existing Matrix clone, and protection of a foreign clone.
+source = tmp / "omarchy-lock"
+source.mkdir()
+(source / "manifest.json").write_text('''{
+  "id": "omarchy.lock", "name": "Lock Screen",
+  "omarchy": {"clonePaths": [{"source": "old", "target": "new"}]}
+}\n''')
+(source / "Service.qml").write_text("Item {}\n")
+(source / "LockView.qml").write_text('''Item {
+  Image {
+    id: wallpaper
+    source: "wallpaper"
+  }
+  MultiEffect {}
+}
+''')
+rain_source = tmp / "rain"
+rain_source.mkdir()
+(rain_source / "CheckRain.qml").write_text("Item {}\n")
+m.SOURCE = source
+m.shutil.which = lambda _: None
+
+new_target = tmp / "plugins/new.lock"
+assert m.stage_clone(new_target, "new.lock", rain_source), "new clone was not published"
+new_manifest = __import__("json").loads((new_target / "manifest.json").read_text())
+assert new_manifest["id"] == "new.lock", "new clone has the wrong id"
+assert new_manifest["name"] == "My Lock Screen", "new clone has the wrong name"
+assert new_manifest["omarchy"] == {
+    "clonedFrom": "omarchy.lock", "derivedBy": "check-cli"
+}, "new clone manifest is not Omarchy's clone manifest with the ownership mark"
+derived_lock = (new_target / "LockView.qml").read_text()
+assert "CheckRain" in derived_lock and "id: wallpaper" not in derived_lock, \
+    "new clone was not patched before publication"
+
+# An existing Matrix clone is rebuilt from the installed lock, not from itself.
+(source / "Service.qml").write_text('Item { property string revision: "new" }\n')
+assert m.stage_clone(new_target, "new.lock", rain_source), "existing Matrix clone was not rebuilt"
+assert 'revision: "new"' in (new_target / "Service.qml").read_text(), \
+    "existing Matrix clone was not rebuilt from Omarchy's source"
+
+foreign_plugins = tmp / "foreign-plugins"
+foreign_plugins.mkdir()
+foreign = foreign_plugins / "foreign-only.lock"
+foreign.mkdir()
+(foreign / "manifest.json").write_text(
+    '{"id":"foreign-only.lock","omarchy":{"clonedFrom":"omarchy.lock"}}'
+)
+m.PLUGINS = foreign_plugins
+target, _ = m.existing_clone()
+assert target == foreign and not m.is_ours(target), "foreign clone lost its protection"
+
+source_text = Path(deriver).read_text()
+assert "omarchy-plugin-clone" not in source_text, "deriver still runs omarchy-plugin-clone"
+assert "rescanPlugins" not in source_text, "deriver still forces a plugin rescan"
 PY
     # clean_legacy_bins takes back only files that carry the pack's marker.
     # SC2034: clean_legacy_bins (in lib/pack.sh) reads SHARE_DIR.
