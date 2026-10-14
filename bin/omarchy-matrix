@@ -4,7 +4,7 @@
 #
 #   <cli> status
 #   <cli> doctor
-#   <cli> update [--check]
+#   <cli> update [--check|<full-sha>]
 #   <cli> boot on|off
 #   <cli> uninstall [--keep-theme]
 #
@@ -178,15 +178,24 @@ sync_files() {
 # --- updates ----------------------------------------------------------------
 #
 # The theme updates from its own repository and from nowhere else, and only
-# when you ask: `update --check` looks, `update` pulls.
+# when you ask. `update --check` looks (read-only: it runs nothing it
+# downloads). `update` applies exactly one commit that you name in full, and
+# nothing else: no branch, no "latest". Name the full SHA of a marketplace
+# verified snapshot, and the command fails closed on anything that is not that
+# commit fast-forwarded onto your checkout.
+#
+# Why not `git pull` a branch: a branch moves. Whatever the branch points at
+# when you pull is what runs next, including code no review ever bound to a
+# commit. Each accepted code update gets its own marketplace
+# validation/review; the SHA you pass is how you point at exactly that one.
 #
 # The URL is written out in the two git commands below, not read from
 # provider.json like every other name in this file. The marketplace's security
-# baseline accepts a pull whose result later runs only when the command itself
+# baseline accepts a fetch whose result later runs only when the command itself
 # names the submission's own repository (commandUsesOnlySubmissionRepository in
 # its scripts/security-baseline-analysis.mjs). Behind a variable it sees no URL
 # and reports unpinned remote code. tools/check.sh keeps both URLs equal to
-# provider.json's repoUrl.
+# provider.json's repoUrl, and fails the run if a branch pull ever comes back.
 #
 # `omarchy theme update` is not used: it pulls every git theme you have, not
 # only this one.
@@ -202,8 +211,9 @@ pack_version() {
 # Never fails. No network, a theme folder that is not a git clone, or a clone
 # with commits of its own all mean "no update to offer": a clone that has moved
 # on by itself is somebody's working copy, and pulling into it is their call.
+# Read-only: it downloads objects but executes none of them.
 cmd_update_check() {
-  local dir current latest
+  local dir current latest sha
   dir=$(theme_dir) || dir=""
   current=$(pack_version)
   if [[ -z $dir || ! -e $dir/.git ]] ||
@@ -214,27 +224,42 @@ cmd_update_check() {
   if ! git -C "$dir" merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null &&
     git -C "$dir" merge-base --is-ancestor HEAD FETCH_HEAD 2>/dev/null; then
     latest=$(git -C "$dir" show FETCH_HEAD:manifest.json 2>/dev/null | jq -r '.version // ""') || latest=""
-    echo "$DISPLAY_NAME ${latest:-a newer version} is out, and you have ${current:-an older version}. Update with: $SELF update"
+    sha=$(git -C "$dir" rev-parse FETCH_HEAD 2>/dev/null) || sha=""
+    echo "$DISPLAY_NAME ${latest:-a newer version} is out, and you have ${current:-an older version}."
+    echo "Confirm that ${sha:-that commit} is a marketplace verified snapshot, then run: $SELF update ${sha:-<full-sha>}"
   else
     echo "$DISPLAY_NAME ${current:-?} is the latest version"
   fi
 }
 
+# Apply one immutable commit, named in full by the caller. Every refusal fails
+# closed: a malformed SHA, an unknown object, a non-commit, the current HEAD,
+# or anything that is not a strict fast-forward of it.
 cmd_update() {
   case "${1:-}" in
   --check) cmd_update_check; return ;;
-  "") ;;
-  *) fail "unknown option: $1 (use: update, or update --check)" ;;
+  "") fail "name the commit: $SELF update --check looks, $SELF update <full-sha> applies a marketplace verified snapshot" ;;
   esac
-  local dir
+  local dir sha="$1"
+  [[ $sha =~ ^[0-9a-f]{40}$ ]] ||
+    fail "not a full commit SHA: $sha (use $SELF update --check to see the candidate)"
   dir=$(theme_dir) || dir=""
   [[ -n $dir && -e $dir/.git ]] ||
     fail "the theme folder ${dir:-for $SLUG} is not a git clone, so it cannot update itself. Install it again with: omarchy theme install $(jq -r .repoUrl "$PROVIDER")"
-  echo "Updating $DISPLAY_NAME in $dir"
-  git -C "$dir" pull --ff-only https://github.com/tymurbogach/omarchy-enter-the-matrix-theme master ||
-    fail "the pull stopped. If you changed files in $dir, commit or discard them, then run this again."
-  # The pulled theme's own CLI runs doctor: a new doctor applies a new layout,
-  # and nothing overwrites this script while bash is still reading it.
+  echo "Updating $DISPLAY_NAME in $dir to $sha"
+  timeout 60 git -C "$dir" fetch --quiet https://github.com/tymurbogach/omarchy-enter-the-matrix-theme "$sha" 2>/dev/null ||
+    fail "could not fetch $sha (no network, or the commit is not on the server)"
+  git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
+    fail "refusing: $sha is not a commit"
+  [[ $(git -C "$dir" rev-parse HEAD) != "$sha" ]] ||
+    fail "already at $sha"
+  git -C "$dir" merge-base --is-ancestor HEAD "$sha" 2>/dev/null ||
+    fail "refusing: $sha is not a fast-forward of your checkout. If you changed files in $dir, commit or discard them; to leave your history alone, install the theme again."
+  git -C "$dir" merge --ff-only "$sha" ||
+    fail "the merge stopped. If you changed files in $dir, commit or discard them, then run this again."
+  # The named commit's own CLI runs doctor: a new doctor applies a new layout,
+  # and nothing overwrites this script while bash is still reading it. This is
+  # the commit you named, not whatever a branch happens to point at.
   exec "$dir/bin/$CLI" doctor
 }
 

@@ -165,12 +165,17 @@ if manifest.get("license") != "MIT":
     bad(f"manifest license is {manifest.get('license')!r}, want 'MIT'")
 if not (root / "LICENSE").is_file():
     bad("LICENSE is missing")
-# The update pulls from a URL written out in the CLI, not read from the
+# The update fetches from a URL written out in the CLI, not read from the
 # provider: see the updates section of bin/omarchy-matrix for why. It must stay
-# the provider's own repository.
-urls = re.findall(r'git -C "\$dir" (?:fetch --quiet|pull --ff-only) (\S+) ', cli)
+# the provider's own repository, and it must stay a fetch of one named commit:
+# no branch pull may ever run downloaded code again.
+urls = re.findall(r'git -C "\$dir" fetch --quiet (\S+) ', cli)
 if len(urls) != 2 or set(urls) != {provider["repoUrl"]}:
     bad(f"the update URLs in bin/omarchy-matrix are {urls}, want {provider['repoUrl']} twice")
+if "pull --ff-only" in cli:
+    bad("bin/omarchy-matrix pulls a branch: updates must name one commit")
+if "merge --ff-only" not in cli or "^[0-9a-f]{40}$" not in cli:
+    bad("bin/omarchy-matrix does not gate updates on a full commit SHA with a fast-forward merge")
 # The rain covers Omarchy's screensaver and never decides when it runs. A
 # third-party service gets a scoped shell that cannot see Stay Awake, the idle
 # timings or the lock. Up to 1.2.0 each of these left the pack with no

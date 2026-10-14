@@ -68,10 +68,23 @@ The command line has five commands:
 ```bash
 omarchy-matrix status       # what is happening right now
 omarchy-matrix doctor       # put everything back, for example after 'omarchy refresh shell'
-omarchy-matrix update       # pull the latest version, then doctor
+omarchy-matrix update       # apply one named commit, then doctor (see below)
 omarchy-matrix boot on      # the boot splash, as Style › Unlock sets it
 omarchy-matrix uninstall
 ```
+
+`update` applies one commit that you name in full, then runs that commit's
+`doctor`:
+
+```bash
+omarchy-matrix update --check   # look: prints the newest version and its SHA
+omarchy-matrix update <full-sha>
+```
+
+Confirm that the SHA is a marketplace verified snapshot before you pass it.
+The command refuses anything else: a short SHA, an unknown object, the commit
+you already have, or anything that is not a fast-forward of your checkout.
+There is no pull of a branch, so no unreviewed code can arrive by itself.
 
 `boot on` records the current screen brightness and applies that percentage in
 the initramfs before Plymouth starts. This prevents the brightness step when

@@ -266,10 +266,13 @@ machinery for each ✓, never a setting.
 
 ### omarchy-matrix update
 
-`omarchy-matrix update --check` looks for a newer version, and
-`omarchy-matrix update` pulls with `--ff-only` from the repository URL written
-out in the command, then runs `doctor` from the pulled theme. The URL is
-literal on purpose: see the updates section of `bin/omarchy-matrix`.
+`omarchy-matrix update --check` looks for a newer version (read-only: it
+downloads objects but runs none) and prints the candidate's full SHA.
+`omarchy-matrix update <full-sha>` fetches exactly that commit from the
+repository URL written out in the command, then applies it only as a strict
+fast-forward of your checkout, and runs that commit's `doctor`. A bare
+`update` names no commit and fails with the usage. The URL is literal on
+purpose: see the updates section of `bin/omarchy-matrix`.
 
 ### About the borders
 
