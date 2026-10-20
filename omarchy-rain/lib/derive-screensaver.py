@@ -8,7 +8,9 @@ from pathlib import Path
 
 MARKER = "# Managed by omarchy-rain. Re-run its installer after omarchy update.\n"
 NEEDLE = "    --random-effect --no-eol --no-restore-cursor &"
-REPLACEMENT = "    --no-eol --no-restore-cursor matrix --rain-time 86400 &"
+REPLACEMENT = "    --no-eol --no-restore-cursor matrix --highlight-color E2FFE2 --rain-color-gradient 7EBB7E 3F7A3F 0E3A12 --rain-fall-delay-range 4-12 --rain-column-delay-range 1-4 --symbol-swap-chance 0.03 --color-swap-chance 0.008 --rain-time 86400 &"
+FRAMERATE_NEEDLE = "--frame-rate 120"
+FRAMERATE_REPLACEMENT = "--frame-rate 60"
 
 
 def fail(message: str) -> None:
@@ -23,9 +25,15 @@ def derive(source: str) -> str:
             "expected one random-effect call in Omarchy's screensaver, "
             f"found {count}. The installed API changed, so nothing was replaced."
         )
+    if source.count(FRAMERATE_NEEDLE) != 1:
+        fail(
+            "expected one --frame-rate 120 call in Omarchy's screensaver, "
+            f"found {source.count(FRAMERATE_NEEDLE)}. The installed API changed, so nothing was replaced."
+        )
     if not source.startswith("#!/bin/bash\n"):
         fail("the installed screensaver no longer has the expected bash header")
     derived = source.replace(NEEDLE, REPLACEMENT)
+    derived = derived.replace(FRAMERATE_NEEDLE, FRAMERATE_REPLACEMENT)
     return derived.replace("#!/bin/bash\n", "#!/bin/bash\n" + MARKER, 1)
 
 
