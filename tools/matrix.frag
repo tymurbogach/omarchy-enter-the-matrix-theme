@@ -104,7 +104,7 @@ void column(float cx, float span, out float head, out float tail,
     tail = 12.0 + hash12(vec2(cx + 0.5, c)) * 20.0;
     // Centred on 1.0, not below it. Varying the brightness per column is what
     // gives the field depth, but a range of 0.5..1.0 also quietly took a
-    // quarter off everything -- and with one cycle in five now resting, the
+    // quarter off everything -- and with one cycle in seven now resting, the
     // whole thing came out 40% darker than the version this is an edit of.
     // Some columns land above 1 and clip a little at the head, which reads as
     // bloom rather than as an error.
