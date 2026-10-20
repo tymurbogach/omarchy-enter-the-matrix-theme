@@ -42,7 +42,7 @@ const float GLYPHS = 50.0;
 
 // One cycle is the screen plus this many rows, so a trail is always completely
 // gone before its column is allowed to start again.
-const float TAIL_MAX = 40.0;
+const float TAIL_MAX = 36.0;
 
 float hash11(float n) {
     return fract(sin(n) * 43758.5453);
@@ -101,7 +101,7 @@ void column(float cx, float span, out float head, out float tail,
     // mod(cycle, k) rather than cycle, because the clock's wrap moves the cycle
     // count on by exactly k -- so this stays continuous straight across it.
     float c = mod(cycle, k);
-    tail = 14.0 + hash12(vec2(cx + 0.5, c)) * 24.0;
+    tail = 12.0 + hash12(vec2(cx + 0.5, c)) * 20.0;
     // Centred on 1.0, not below it. Varying the brightness per column is what
     // gives the field depth, but a range of 0.5..1.0 also quietly took a
     // quarter off everything -- and with one cycle in five now resting, the
@@ -109,9 +109,9 @@ void column(float cx, float span, out float head, out float tail,
     // Some columns land above 1 and clip a little at the head, which reads as
     // bloom rather than as an error.
     dim = 0.68 + hash12(vec2(cx + 3.7, c)) * 0.60;
-    // Roughly one cycle in five, the column simply does not fall. Columns that
+    // Roughly one cycle in seven, the column simply does not fall. Columns that
     // rest are what stops the field reading as a machine.
-    alive = step(0.20, hash12(vec2(cx + 9.1, c)));
+    alive = step(0.15, hash12(vec2(cx + 9.1, c)));
 
     // The cold start, and the reason it is a gate rather than an offset: a
     // column waits until it BEGINS a cycle, so it enters over the top edge
@@ -148,10 +148,10 @@ void main() {
     float t = clamp(above / tail, 0.0, 1.0);
 
     // ttfx never fades the trail to nothing: each character takes a random
-    // green from the gradient and stays. The floor of 0.30 keeps that body while
+    // green from the gradient and stays. The floor of 0.24 keeps that body while
     // still letting the fall read. `dim` on top of it leaves some columns faint
     // and others vivid, which is what gives the field depth.
-    float bright = mix(1.0, 0.30, pow(t, 0.75)) * vis * dim;
+    float bright = mix(1.0, 0.24, pow(t, 0.85)) * vis * dim;
 
     // The glyph is redrawn faster at the head than down in the body: the drop
     // boils, the tail settles. Banded rather than continuous, so a cell changes
@@ -202,7 +202,7 @@ void main() {
         glow += na * nd * exp(-dx * dx * 3.0 - dy * dy * 0.5);
     }
 
-    vec3 col = colBg.rgb + glyph * a * bright + colHead.rgb * glow * 0.07;
+    vec3 col = colBg.rgb + glyph * a * bright + colHead.rgb * glow * 0.09;
 
     // A gentle scanline, so it reads like the output of a CRT. Two NATIVE
     // pixels to a cycle: tied to the panel rather than to logical pixels,
