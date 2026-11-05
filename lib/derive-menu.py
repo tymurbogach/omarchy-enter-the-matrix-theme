@@ -57,7 +57,7 @@ BEGIN = f"// >>> {SLUG}: rows of Omarchy's menu, managed by {PROVIDER['cli']}. D
 OLD_BEGIN = f"// >>> {SLUG}: Style > Unlock, managed by {PROVIDER['cli']}. Do not edit."
 END = f"// <<< {SLUG}"
 
-UNLOCK = "style.unlock"
+UNLOCK_IDS = ("appearance.unlock", "style.unlock")
 REMOVE = "remove.theme"
 
 # Style > Unlock: the three places that the patch goes, as Omarchy writes them
@@ -97,7 +97,7 @@ def patch_unlock(action):
         found = action.count(anchor)
         if found != 1:
             raise LookupError(
-                f"expected `{anchor}` once in Omarchy's {UNLOCK} action, found it "
+                f"expected `{anchor}` once in Omarchy's unlock action, found it "
                 f"{found} times. Style > Unlock is Omarchy's own again: its {SLUG} "
                 f"card gives the still splash, and `{PROVIDER['cli']} boot on` still "
                 f"animates it")
@@ -120,7 +120,10 @@ def patch_remove(action):
     return f"{REMOVE_THEME}; [[ ! -x '{CLI}' ]] || '{CLI}' hook theme-remove"
 
 
-PATCHES = {UNLOCK: patch_unlock, REMOVE: patch_remove}
+def patches_for(menu):
+    # Omarchy 4.5 renamed the row. Prefer its current id when both exist.
+    unlock = next((row_id for row_id in UNLOCK_IDS if row_id in menu), UNLOCK_IDS[0])
+    return {unlock: patch_unlock, REMOVE: patch_remove}
 
 
 def omarchy_menu():
@@ -130,7 +133,7 @@ def omarchy_menu():
         die(f"cannot read Omarchy's menu at {DEFAULT_MENU}: {failure}")
 
 
-def derive(menu, row_id):
+def derive(menu, row_id, patches):
     """The replacement for one row. LookupError when Omarchy's row no longer fits."""
     row = menu.get(row_id)
     if not isinstance(row, dict) or not isinstance(row.get("action"), str):
@@ -138,7 +141,7 @@ def derive(menu, row_id):
     # icon and label come along: normalizeItem (MenuModel.js) fills in every
     # key before the merge, so a row without them would blank Omarchy's.
     entry = {key: row[key] for key in ("icon", "label", "aliases") if key in row}
-    entry["action"] = PATCHES[row_id](row["action"])
+    entry["action"] = patches[row_id](row["action"])
     return entry
 
 
@@ -216,13 +219,14 @@ def main():
 
     menu = omarchy_menu()
     entries, failures = {}, []
-    for row_id in PATCHES:
+    patches = patches_for(menu)
+    for row_id in patches:
         if row_id in before:
             print(f"derive-menu: {USER_MENU} already replaces {row_id} with a row of "
                   f"your own. Leaving it alone.", file=sys.stderr)
             continue
         try:
-            entries[row_id] = derive(menu, row_id)
+            entries[row_id] = derive(menu, row_id, patches)
         except LookupError as failure:
             failures.append(str(failure))
 

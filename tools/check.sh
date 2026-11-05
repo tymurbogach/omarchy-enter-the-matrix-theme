@@ -473,6 +473,27 @@ check_menu() {
     slug=$(jq -r .slug "$ROOT/provider.json")
     cli="$HOME/.local/bin/$(jq -r .cli "$ROOT/provider.json")"
 
+    # Both Omarchy row names must derive the same safe action.
+    python3 - "$ROOT/lib/derive-menu.py" <<'PYCODE' || exit 1
+import runpy, sys
+module = runpy.run_path(sys.argv[1])
+base = module["omarchy_menu"]()
+row = next(base[key] for key in module["UNLOCK_IDS"] if key in base)
+for key in module["UNLOCK_IDS"]:
+    menu = {key: row, module["REMOVE"]: base[module["REMOVE"]]}
+    patches = module["patches_for"](menu)
+    assert key in patches
+    derived = module["derive"](menu, key, patches)
+    assert "boot on" in derived["action"] and "boot off" in derived["action"]
+    bad = dict(row, action="unexpected command")
+    try:
+        module["derive"]({key: bad}, key, patches)
+    except LookupError:
+        pass
+    else:
+        raise AssertionError("changed upstream action must be rejected")
+PYCODE
+
     "$ROOT/lib/derive-menu.py" >/dev/null || { echo "  FAIL: no derive into an empty HOME" >&2; exit 1; }
     first=$(cat "$menu")
     "$ROOT/lib/derive-menu.py" >/dev/null && [[ $(cat "$menu") == "$first" ]] ||
@@ -488,7 +509,13 @@ raw = re.sub(r",(\s*[}\]])", r"\1", raw)
 print(json.loads(raw)[sys.argv[2]]["action"])
 PY
     }
-    action=$(row_action style.unlock) && remove=$(row_action remove.theme) ||
+    unlock_id=$(python3 - "$omarchy/default/omarchy/omarchy-menu.jsonc" <<'PYCODE'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+print("appearance.unlock" if re.search(r'"appearance\.unlock"\s*:', raw) else "style.unlock")
+PYCODE
+    )
+    action=$(row_action "$unlock_id") && remove=$(row_action remove.theme) ||
       { echo "  FAIL: the menu does not parse the way Omarchy parses it" >&2; exit 1; }
 
     # Remove > Theme: Omarchy's command first and unchanged, then ours.
