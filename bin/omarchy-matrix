@@ -404,8 +404,52 @@ EARLY_HOOK="$ETC_ROOT/etc/initcpio/hooks/omarchy-matrix-backlight"
 EARLY_INSTALL="$ETC_ROOT/etc/initcpio/install/omarchy-matrix-backlight"
 EARLY_CONFIG="$ETC_ROOT/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
 
+# Omarchy's own splash folder. The path comes from a variable so tests can
+# point it at a scratch dir. See CONTRIBUTING.md: when this folder is not
+# owned by root or is writable by group or others, every Appearance › Unlock
+# choice fails while the terminal still prints "Done!".
+OMARCHY_SPLASH_DIR="${OMARCHY_MATRIX_OMARCHY_SPLASH_DIR:-/usr/share/plymouth/themes/omarchy}"
+
 early_backlight_present() {
   [[ -e $EARLY_HOOK || -e $EARLY_INSTALL || -e $EARLY_CONFIG ]]
+}
+
+# The Matrix theme folder. Its own function so tests can stub it.
+matrix_theme_dir_present() {
+  [[ -d /usr/share/plymouth/themes/$PLYMOUTH_THEME ]]
+}
+
+# True when the animation is not the default but something of the Matrix
+# splash is still there: the early hook in /etc, the theme folder, or
+# Omarchy's still splash carrying this theme's card. Omarchy's own commands
+# (Appearance › Unlock native row, plymouth set|reset, refresh plymouth)
+# never remove these, so status and doctor name them. Never runs sudo.
+boot_leftovers() {
+  boot_applied && return 1
+  early_backlight_present && return 0
+  matrix_theme_dir_present && return 0
+  omarchy_boot_is_ours
+}
+
+# True when Omarchy's own splash folder exists but root does not own it, or
+# group or others can write to it. Read-only: only stat, never sudo.
+omarchy_splash_permissions_bad() {
+  local dir="${1:-$OMARCHY_SPLASH_DIR}" owner perms group other
+  [[ -d $dir ]] || return 1
+  owner=$(stat -c %U "$dir" 2>/dev/null) || return 1
+  perms=$(stat -c %a "$dir" 2>/dev/null) || return 1
+  [[ $owner == root ]] || return 0
+  group=$(( (10#$perms / 10) % 10 ))
+  other=$(( 10#$perms % 10 ))
+  (( (group & 2) != 0 || (other & 2) != 0 ))
+}
+
+warn_omarchy_splash_permissions() {
+  local dir="${1:-$OMARCHY_SPLASH_DIR}"
+  omarchy_splash_permissions_bad "$dir" || return 0
+  echo "$SELF: $dir is not owned by root or is writable by group or others." >&2
+  echo "  Appearance › Unlock then fails, and the terminal still prints \"Done!\"" >&2
+  echo "  Repair with: sudo chown root:root \"$dir\" and sudo chmod 755 \"$dir\"" >&2
 }
 
 # Remove it before a rebuild, otherwise an old initramfs would still run it
@@ -522,6 +566,16 @@ cmd_hook_post_update() {
       "Omarchy's lock has changed and the rain patch no longer fits. Native lock for now." \
       2>/dev/null || true
   fi
+
+  # Leftovers survive Omarchy's own splash switches, and this hook runs with
+  # its output discarded. Name the remedy out loud, whichever theme is current.
+  if boot_leftovers; then
+    local what="The Matrix boot splash left files behind."
+    omarchy_boot_is_ours && what="Omarchy's still splash carries this theme's card, not the Matrix splash."
+    omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
+      "$what For the animation: Appearance › Unlock or $SELF boot on. To remove it all: $SELF boot off." \
+      2>/dev/null || true
+  fi
 }
 
 # --- commands ---------------------------------------------------------------
@@ -586,6 +640,12 @@ cmd_status() {
 
   if boot_applied; then
     status_row on boot "the lines from the film, before login"
+  elif boot_leftovers; then
+    if omarchy_boot_is_ours; then
+      status_row off boot "Omarchy's still splash with this theme's card. For the animation: Appearance › Unlock or $SELF boot on. To remove it all: $SELF boot off"
+    else
+      status_row off boot "files of the Matrix splash left behind. For the animation: Appearance › Unlock or $SELF boot on. To remove it all: $SELF boot off"
+    fi
   else
     status_row off boot "Omarchy's splash. For the Matrix one: Style › Unlock"
   fi
@@ -617,6 +677,9 @@ cmd_doctor() {
     stand_down
   fi
   finish_changes || failures=1
+  # Omarchy's publisher refuses a theme folder that root does not own, or
+  # that group or others can write to. Warn only: this changes no exit code.
+  warn_omarchy_splash_permissions || true
   cmd_status
   return $failures
 }

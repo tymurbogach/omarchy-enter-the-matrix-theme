@@ -91,6 +91,11 @@ the initramfs before Plymouth starts. This prevents the brightness step when
 the system later restores its desktop setting. If you deliberately change that
 setting, run `omarchy-matrix boot on` again before the next reboot.
 
+Omarchy's own still splash can also carry this theme's card. That still splash
+is not the Matrix one. `omarchy-matrix boot off` removes it and puts Omarchy's
+default splash back. `omarchy-matrix status` names any leftover of the Matrix
+splash, with the command that removes it.
+
 Try the lock without locking yourself out: `omarchy-shell lock preview`. See the
 boot splash without rebooting: `tools/preview-plymouth.sh` from a checkout, and
 the shutdown one without shutting down: append `--mode shutdown`.

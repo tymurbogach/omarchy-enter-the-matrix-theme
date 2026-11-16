@@ -648,6 +648,237 @@ PYCODE
   ) || failures=$((failures + 1))
 }
 
+# --- boot leftovers ---------------------------------------------------------
+# status and doctor name leftovers of the Matrix splash, doctor warns about
+# Omarchy's own splash folder permissions, and the post-update hook notifies.
+# Every branch runs the real functions from bin/omarchy-matrix with stubbed
+# primitives (no sudo, no writes outside a mktemp dir).
+
+check_boot_leftovers() {
+  section "boot leftovers (status, doctor, post-update)"
+  local tmp out warn_out dir_val boot_line
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/home"
+
+  # boot_leftovers branches: (boot_applied, early, matrix dir, still) -> leftovers?
+  if HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    boot_applied() { return 1; }
+    early_backlight_present() { return 1; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 1; }
+    boot_leftovers
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "boot_leftovers is true with nothing left behind"
+  fi
+
+  if ! HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    boot_applied() { return 1; }
+    early_backlight_present() { return 0; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 1; }
+    boot_leftovers
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "boot_leftovers misses the early hook leftover"
+  fi
+
+  if ! HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    boot_applied() { return 1; }
+    early_backlight_present() { return 1; }
+    matrix_theme_dir_present() { return 0; }
+    omarchy_boot_is_ours() { return 1; }
+    boot_leftovers
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "boot_leftovers misses the theme dir leftover"
+  fi
+
+  if ! HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    boot_applied() { return 1; }
+    early_backlight_present() { return 1; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 0; }
+    boot_leftovers
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "boot_leftovers misses the still-splash leftover"
+  fi
+
+  if HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    boot_applied() { return 0; }
+    early_backlight_present() { return 0; }
+    matrix_theme_dir_present() { return 0; }
+    omarchy_boot_is_ours() { return 0; }
+    boot_leftovers
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "boot_leftovers is true while the splash is applied"
+  fi
+
+  # status boot row: still-splash leftover names the card and the remedy.
+  out=$(HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    pack_version() { echo ""; }
+    theme_removed() { return 1; }
+    pack_in_effect() { return 1; }
+    plugin_enabled() { return 1; }
+    lock_clone_id() { return 1; }
+    current_theme() { echo other; }
+    boot_applied() { return 1; }
+    early_backlight_present() { return 1; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 0; }
+    cmd_status
+  ' "$ROOT/bin/omarchy-matrix" || true)
+  [[ $out == *"still splash"* ]] || fail "status does not name the still-splash leftover"
+  [[ $out == *"boot off"* ]] || fail "status leftover row names no boot off remedy"
+  [[ $out == *"Appearance"* ]] || fail "status leftover row does not use Appearance"
+  boot_line=$(printf "%s\n" "$out" | grep -i boot || true)
+  [[ $boot_line != *"Style"* ]] || fail "status leftover row still says Style"
+
+  # status boot row: files leftover.
+  out=$(HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    pack_version() { echo ""; }
+    theme_removed() { return 1; }
+    pack_in_effect() { return 1; }
+    plugin_enabled() { return 1; }
+    lock_clone_id() { return 1; }
+    current_theme() { echo other; }
+    boot_applied() { return 1; }
+    early_backlight_present() { return 0; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 1; }
+    cmd_status
+  ' "$ROOT/bin/omarchy-matrix" || true)
+  [[ $out == *"left behind"* ]] || fail "status does not name the files leftover"
+
+  # status boot row: applied and plain off keep their meaning.
+  out=$(HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    pack_version() { echo ""; }
+    theme_removed() { return 1; }
+    pack_in_effect() { return 1; }
+    plugin_enabled() { return 1; }
+    lock_clone_id() { return 1; }
+    current_theme() { echo other; }
+    boot_applied() { return 0; }
+    cmd_status
+  ' "$ROOT/bin/omarchy-matrix" || true)
+  [[ $out == *"lines from the film"* ]] || fail "status applied row changed"
+  out=$(HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    pack_version() { echo ""; }
+    theme_removed() { return 1; }
+    pack_in_effect() { return 1; }
+    plugin_enabled() { return 1; }
+    lock_clone_id() { return 1; }
+    current_theme() { echo other; }
+    boot_applied() { return 1; }
+    early_backlight_present() { return 1; }
+    matrix_theme_dir_present() { return 1; }
+    omarchy_boot_is_ours() { return 1; }
+    cmd_status
+  ' "$ROOT/bin/omarchy-matrix" || true)
+  [[ $out == *"Omarchy's splash"* ]] || fail "status plain off row changed"
+
+  # The permission check takes its path from a variable tests can override.
+  dir_val=$(OMARCHY_MATRIX_OMARCHY_SPLASH_DIR="$tmp/custom" HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null; printf "%s" "$OMARCHY_SPLASH_DIR"
+  ' "$ROOT/bin/omarchy-matrix" || true)
+  [[ $dir_val == "$tmp/custom" ]] || fail "OMARCHY_SPLASH_DIR ignores its test override"
+
+  # Bad permissions: owned by the user, or writable by group or others.
+  mkdir -p "$tmp/omarchy"
+  if ! HOME="$tmp/home" STUB_OWNER=user STUB_PERMS=755 bash -c '
+    source "$0" -h >/dev/null
+    stat() {
+      if [[ $2 == "%U" ]]; then printf "%s\n" "$STUB_OWNER"; else printf "%s\n" "$STUB_PERMS"; fi
+    }
+    omarchy_splash_permissions_bad "$1"
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/omarchy"; then
+    fail "permission check misses a user-owned splash folder"
+  fi
+  if ! HOME="$tmp/home" STUB_OWNER=root STUB_PERMS=775 bash -c '
+    source "$0" -h >/dev/null
+    stat() {
+      if [[ $2 == "%U" ]]; then printf "%s\n" "$STUB_OWNER"; else printf "%s\n" "$STUB_PERMS"; fi
+    }
+    omarchy_splash_permissions_bad "$1"
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/omarchy"; then
+    fail "permission check misses a group-writable splash folder"
+  fi
+  if HOME="$tmp/home" STUB_OWNER=root STUB_PERMS=755 bash -c '
+    source "$0" -h >/dev/null
+    stat() {
+      if [[ $2 == "%U" ]]; then printf "%s\n" "$STUB_OWNER"; else printf "%s\n" "$STUB_PERMS"; fi
+    }
+    omarchy_splash_permissions_bad "$1"
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/omarchy"; then
+    fail "permission check flags a root-owned 755 splash folder"
+  fi
+  if HOME="$tmp/home" bash -c '
+    source "$0" -h >/dev/null
+    omarchy_splash_permissions_bad "$1"
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/missing"; then
+    fail "permission check flags a missing splash folder"
+  fi
+
+  # doctor warning names the repair and changes no exit code path here.
+  warn_out=$(HOME="$tmp/home" STUB_OWNER=user STUB_PERMS=755 bash -c '
+    source "$0" -h >/dev/null
+    stat() {
+      if [[ $2 == "%U" ]]; then printf "%s\n" "$STUB_OWNER"; else printf "%s\n" "$STUB_PERMS"; fi
+    }
+    warn_omarchy_splash_permissions "$1" 2>&1
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/omarchy" || true)
+  [[ $warn_out == *"sudo chown root:root"* ]] || fail "permission warning names no chown repair"
+  [[ $warn_out == *"sudo chmod 755"* ]] || fail "permission warning names no chmod repair"
+  warn_out=$(HOME="$tmp/home" STUB_OWNER=root STUB_PERMS=755 bash -c '
+    source "$0" -h >/dev/null
+    stat() {
+      if [[ $2 == "%U" ]]; then printf "%s\n" "$STUB_OWNER"; else printf "%s\n" "$STUB_PERMS"; fi
+    }
+    warn_omarchy_splash_permissions "$1" 2>&1
+  ' "$ROOT/bin/omarchy-matrix" "$tmp/omarchy" || true)
+  [[ -z $warn_out ]] || fail "permission warning fires on good permissions"
+
+  # post-update notifies once with leftovers, stays quiet without.
+  rm -f "$tmp/notify.log"
+  HOME="$tmp/home" NOTIFY_LOG="$tmp/notify.log" bash -c '
+    source "$0" -h >/dev/null
+    cmd_doctor() { return 0; }
+    boot_applied() { return 1; }
+    pack_in_effect() { return 1; }
+    apply_unlock_menu() { return 0; }
+    lock_clone_enabled() { return 0; }
+    forget_plugin_list() { return 0; }
+    boot_leftovers() { return 0; }
+    omarchy_boot_is_ours() { return 1; }
+    omarchy-notification-send() { printf "%s\n" "$*" >>"$NOTIFY_LOG"; return 0; }
+    cmd_hook_post_update
+  ' "$ROOT/bin/omarchy-matrix"
+  [[ $(grep -c "boot off" "$tmp/notify.log" 2>/dev/null) == 1 ]] ||
+    fail "post-update does not send exactly one notice with leftovers"
+
+  rm -f "$tmp/notify.log"
+  HOME="$tmp/home" NOTIFY_LOG="$tmp/notify.log" bash -c '
+    source "$0" -h >/dev/null
+    cmd_doctor() { return 0; }
+    boot_applied() { return 1; }
+    pack_in_effect() { return 1; }
+    apply_unlock_menu() { return 0; }
+    lock_clone_enabled() { return 0; }
+    forget_plugin_list() { return 0; }
+    boot_leftovers() { return 1; }
+    omarchy-notification-send() { printf "%s\n" "$*" >>"$NOTIFY_LOG"; return 0; }
+    cmd_hook_post_update
+  ' "$ROOT/bin/omarchy-matrix"
+  [[ ! -s $tmp/notify.log ]] || fail "post-update notifies without leftovers"
+}
+
 # --- main ----------------------------------------------------------------------
 
 check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
@@ -663,6 +894,7 @@ check_early_backlight_removal
 check_early_backlight_paths
 check_ownership
 check_menu
+check_boot_leftovers
 
 if ((failures > 0)); then
   echo "$failures check(s) failed" >&2
