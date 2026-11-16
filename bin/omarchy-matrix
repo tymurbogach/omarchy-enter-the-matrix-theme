@@ -500,10 +500,14 @@ cmd_hook_post_update() {
   # doctor derived the menu rows again. If one of Omarchy's rows changed shape,
   # the deriver handed that row back to Omarchy. Say so: nobody reads doctor
   # here.
-  if ! apply_unlock_menu >/dev/null 2>&1; then
-    omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
-      "Omarchy's menu has changed, so Style › Unlock or Remove › Theme is Omarchy's own for now." \
-      2>/dev/null || true
+  # Only while something of ours is up: under another theme, with Omarchy's
+  # splash, the rows are Omarchy's anyway and a notice would only be noise.
+  if pack_in_effect || boot_applied; then
+    if ! apply_unlock_menu >/dev/null 2>&1; then
+      omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
+        "Omarchy's menu has changed, so Style › Unlock or Remove › Theme is Omarchy's own for now." \
+        2>/dev/null || true
+    fi
   fi
 
   # doctor's failure mode, when nobody watches stdout: the patch no longer fits
