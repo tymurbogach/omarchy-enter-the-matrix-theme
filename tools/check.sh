@@ -498,7 +498,11 @@ source.mkdir()
 ''')
 rain_source = tmp / "rain"
 rain_source.mkdir()
-(rain_source / "CheckRain.qml").write_text("Item {}\n")
+(rain_source / "CheckRain.qml").write_text("import QtQuick\nItem {\n"
+                                            "  property int startDelayMs: 1000\n"
+                                            "  property bool running: false\n"
+                                            "  function restart() {}\n"
+                                            "}\n")
 m.SOURCE = source
 m.shutil.which = lambda _: None
 
@@ -513,6 +517,85 @@ assert new_manifest["omarchy"] == {
 derived_lock = (new_target / "LockView.qml").read_text()
 assert "CheckRain" in derived_lock and "id: wallpaper" not in derived_lock, \
     "new clone was not patched before publication"
+
+# Omarchy 4.5 draws the wallpaper with BackgroundMedia, not Image (4.0), with
+# the same MultiEffect blur behind it. The patch finds the element by its id,
+# whatever the accepted type is.
+(source / "LockView.qml").write_text('''Item {
+  BackgroundMedia {
+    id: wallpaper
+    path: "wallpaper"
+  }
+  MultiEffect {
+    source: wallpaper
+  }
+}
+''')
+assert m.stage_clone(tmp / "plugins/new45.lock", "new45.lock", rain_source), "BackgroundMedia clone was not published"
+derived_lock = (tmp / "plugins/new45.lock/LockView.qml").read_text()
+assert "CheckRain" in derived_lock and "id: wallpaper" not in derived_lock, \
+    "BackgroundMedia clone was not patched before publication"
+import re as _re
+code_only = "\n".join(line for line in derived_lock.splitlines()
+                      if not _re.match(r"^[ \t]*//", line))
+assert "wallpaper" not in code_only, \
+    "BackgroundMedia clone keeps a reference to the removed wallpaper element"
+assert "MultiEffect" not in derived_lock, \
+    "BackgroundMedia clone keeps the blur that covered the wallpaper"
+
+# The real installed lock, when this machine has one: derive into a temp dir
+# (never the live plugins dir) and check the same two properties. Skip with
+# a note where no Omarchy lock is installed.
+import os as _os
+import subprocess as _sp
+_real_qml = Path(_os.environ.get("OMARCHY_PATH", "/usr/share/omarchy")) / "shell/plugins/lock/LockView.qml"
+if not _real_qml.is_file():
+    print("  note: no installed LockView.qml, skipping the real-lock case", file=sys.stderr)
+else:
+    m.SOURCE = _real_qml.parent
+    real_target = tmp / "plugins/real.lock"
+    assert m.stage_clone(real_target, "real.lock", rain_source), "real lock clone was not published"
+    real_derived = (real_target / "LockView.qml").read_text()
+    real_code = "\n".join(line for line in real_derived.splitlines()
+                          if not _re.match(r"^[ \t]*//", line))
+    assert "wallpaper" not in real_code, \
+        "real derived lock keeps a reference to the removed wallpaper element"
+    assert "MultiEffect" not in real_derived, \
+        "real derived lock keeps the blur that covered the wallpaper"
+    _lint = None
+    for _c in ("qmllint", "/usr/lib/qt6/bin/qmllint"):
+        try:
+            _v = _sp.run([_c, "--version"], capture_output=True, text=True)
+        except OSError:
+            continue
+        if " 6." in (_v.stdout + _v.stderr):
+            _lint = _c
+            break
+    if _lint is None:
+        print("  note: no Qt6 qmllint, skipping the real-lock lint comparison", file=sys.stderr)
+    else:
+        _inc = str(_real_qml.parent.parent.parent)
+        _orig = _sp.run([_lint, "-I", _inc, str(_real_qml)],
+                        capture_output=True, text=True)
+        _new = _sp.run([_lint, "-I", _inc, str(real_target / "LockView.qml")],
+                       capture_output=True, text=True)
+        def _diag(res, path):
+            found = []
+            for _line in (res.stdout + res.stderr).splitlines():
+                _line = _line.strip()
+                if not (_line.startswith("Warning:") or _line.startswith("Info:")
+                        or _line.startswith("Error:")):
+                    continue
+                _line = _line.replace(str(path), "LockView.qml")
+                found.append(_re.sub(r"LockView\.qml:\d+:\d+", "LockView.qml", _line))
+            return sorted(set(found))
+        _extra = [line for line in _diag(_new, real_target / "LockView.qml")
+                  if line not in _diag(_orig, _real_qml)]
+        if _extra:
+            print(f"  note: qmllint new warnings on the derived lock: {_extra}", file=sys.stderr)
+        else:
+            print("  note: qmllint reports no new warnings on the derived lock", file=sys.stderr)
+    m.SOURCE = source
 
 # An existing Matrix clone is rebuilt from the installed lock, not from itself.
 (source / "Service.qml").write_text('Item { property string revision: "new" }\n')

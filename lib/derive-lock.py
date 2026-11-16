@@ -80,17 +80,18 @@ def end_of_block(text, start):
 
 
 def patch(text):
-    images = [m for m in re.finditer(r"^[ \t]*Image\s*\{", text, re.M)
-              if "id: wallpaper" in text[m.start():end_of_block(text, m.start())]]
-    if len(images) != 1:
+    wallpaper = [m for m in re.finditer(r"^[ \t]*(Image|BackgroundMedia)\s*\{", text, re.M)
+                 if re.search(r"\bid:\s*wallpaper\b", text[m.start():end_of_block(text, m.start())])]
+    if len(wallpaper) != 1:
         die(
-            f"expected exactly one `Image {{ id: wallpaper }}` in LockView.qml, found "
-            f"{len(images)}. Omarchy's lock has changed: leaving it alone.\n"
+            f"expected exactly one wallpaper element (`Image` or `BackgroundMedia` "
+            f"with `id: wallpaper`) in LockView.qml, found "
+            f"{len(wallpaper)}. Omarchy's lock has changed: leaving it alone.\n"
             f"  Please open an issue at {PROVIDER['repoUrl']} "
             f"with your `omarchy version`."
         )
 
-    start = images[0].start()
+    start = wallpaper[0].start()
     end = end_of_block(text, start)
 
     # The MultiEffect that blurs that image sits right behind it and goes too.
