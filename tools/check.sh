@@ -310,8 +310,8 @@ check_early_backlight() {
   printf 'DEVICE=intel_backlight\nPERCENT=20\n' >"$tmp/config"
   OMARCHY_MATRIX_BACKLIGHT_CONFIG="$tmp/config" \
     OMARCHY_MATRIX_BACKLIGHT_ROOT="$tmp/backlight" \
-    sh -c '. "$1"; run_hook' sh "$hook" || {
-      fail "the early backlight hook does not run"
+      sh -c 'root=/dev/mapper/root; . "$1"; run_hook; [[ $root == /dev/mapper/root ]]' sh "$hook" || {
+        fail "the early backlight hook does not preserve mkinitcpio root"
       return 0
     }
   [[ $(<"$tmp/backlight/intel_backlight/brightness") == 20 ]] ||

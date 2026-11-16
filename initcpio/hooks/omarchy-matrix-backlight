@@ -5,10 +5,10 @@
 # The config rides in the active Matrix theme, so this hook does nothing when
 # the theme was not bundled into the current initramfs.
 run_hook() {
-    local config device percent max value
+    local config device percent max value backlight_root
 
     config=${OMARCHY_MATRIX_BACKLIGHT_CONFIG:-/usr/share/plymouth/themes/omarchy-matrix/early-backlight.conf}
-    root=${OMARCHY_MATRIX_BACKLIGHT_ROOT:-/sys/class/backlight}
+    backlight_root=${OMARCHY_MATRIX_BACKLIGHT_ROOT:-/sys/class/backlight}
     [ -r "$config" ] || return 0
 
     # The file is generated from one active /sys/class/backlight entry at
@@ -27,8 +27,8 @@ run_hook() {
     case "$percent" in '' | *[!0-9]* ) return 0 ;; esac
     [ "$percent" -ge 1 ] && [ "$percent" -le 100 ] || return 0
 
-    max="$root/$device/max_brightness"
-    value="$root/$device/brightness"
+    max="$backlight_root/$device/max_brightness"
+    value="$backlight_root/$device/brightness"
     [ -r "$max" ] && [ -w "$value" ] || return 0
     max=$(cat "$max")
     case "$max" in *[!0-9]* | '') return 0 ;; esac
