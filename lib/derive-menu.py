@@ -4,7 +4,7 @@
 Omarchy runs no hook after either row, so the pack cannot follow them in any
 other way:
 
-- Style > Unlock runs `omarchy-plymouth-set-by-theme <theme>`, which installs
+- Appearance > Unlock runs `omarchy-plymouth-set-by-theme <theme>`, which installs
   colours and one still image. The card of this theme could only give the
   still splash, never the animation.
 - Remove > Theme runs `omarchy-theme-remove`, which deletes the theme's folder
@@ -60,7 +60,7 @@ END = f"// <<< {SLUG}"
 UNLOCK_IDS = ("appearance.unlock", "style.unlock")
 REMOVE = "remove.theme"
 
-# Style > Unlock: the three places that the patch goes, as Omarchy writes them
+# Appearance > Unlock: the three places that the patch goes, as Omarchy writes them
 # today. Each one must occur exactly once in the row's action.
 RESET = "omarchy-launch-floating-terminal-with-presentation omarchy-plymouth-reset;"
 BY_THEME = 'omarchy-plymouth-set-by-theme $(printf %q "$unlock")"'
@@ -98,7 +98,7 @@ def patch_unlock(action):
         if found != 1:
             raise LookupError(
                 f"expected `{anchor}` once in Omarchy's unlock action, found it "
-                f"{found} times. Style > Unlock is Omarchy's own again: its {SLUG} "
+                f"{found} times. Appearance > Unlock is Omarchy's own again: its {SLUG} "
                 f"card gives the still splash, and `{PROVIDER['cli']} boot on` still "
                 f"animates it")
     off = f"'{CLI}' boot off"

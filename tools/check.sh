@@ -551,13 +551,13 @@ PY
   ) || failures=$((failures + 1))
 }
 
-# --- Style > Unlock ------------------------------------------------------------
+# --- Unlock row ------------------------------------------------------------
 # The derived row, against this machine's Omarchy menu, in a scratch HOME. Each
 # choice runs through a fake switcher and a fake launcher, so every branch is
 # seen without sudo and without a terminal.
 
 check_menu() {
-  section "Style > Unlock (lib/derive-menu.py)"
+  section "Unlock row (lib/derive-menu.py)"
   local omarchy="${OMARCHY_PATH:-/usr/share/omarchy}"
   if [[ ! -f $omarchy/default/omarchy/omarchy-menu.jsonc ]]; then
     echo "  skip: no Omarchy menu installed" >&2
@@ -879,6 +879,35 @@ check_boot_leftovers() {
   [[ ! -s $tmp/notify.log ]] || fail "post-update notifies without leftovers"
 }
 
+# --- menu names ---------------------------------------------------------------
+# Omarchy 4.5 renamed the Style group to Appearance (rows appearance.theme,
+# appearance.background and appearance.unlock; Remove is remove.theme, on its
+# own). No user-facing string may still name the old group. The old name
+# survives in exactly three lines: the 1.2.x block marker in
+# lib/derive-menu.py (OLD_BEGIN, with the history comment above it) and the
+# migration fixture in check_menu that rewrites that marker before it derives.
+# The two grep needles are built from a prefix so that this file holds no
+# literal of its own for the check to trip over.
+
+check_menu_names() {
+  section "menu names follow Appearance, not Style"
+  local prefix="Style" hits rest
+  hits=$(git -C "$ROOT" ls-files -z -- . ':!PICTURES TEST' ':!boot splash objective' |
+    (cd "$ROOT" && xargs -0 -r grep -Hn -I -e "$prefix ›" -e "$prefix >" || true))
+  if [[ -z $hits ]]; then
+    return 0
+  fi
+  rest=$(printf '%s\n' "$hits" \
+    | grep -v -e '^lib/derive-menu.py:.*OLD_BEGIN' \
+               -e '^lib/derive-menu.py:.*Up to 1\.2\.x' \
+               -e "^tools/check.sh:.*rows of Omarchy's menu," || true)
+  if [[ -n ${rest//[[:space:]]/} ]]; then
+    printf '%s\n' "$rest" >&2
+    fail "user-facing text still names the Style menu group"
+  fi
+  return 0
+}
+
 # --- main ----------------------------------------------------------------------
 
 check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
@@ -894,6 +923,7 @@ check_early_backlight_removal
 check_early_backlight_paths
 check_ownership
 check_menu
+check_menu_names
 check_boot_leftovers
 
 if ((failures > 0)); then

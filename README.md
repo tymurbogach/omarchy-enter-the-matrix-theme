@@ -58,10 +58,10 @@ There is nothing to switch. Omarchy's own menus decide, and the rain follows:
 
 | Piece | What decides it |
 |---|---|
-| Desktop | **Style › Background.** The rain is one background in the list, and any other background stops it. A theme set starts on the rain. It always rains while the rain is the background, on mains and on battery, with windows open or not. |
+| Desktop | **Appearance › Background.** The rain is one background in the list, and any other background stops it. A theme set starts on the rain. It always rains while the rain is the background, on mains and on battery, with windows open or not. |
 | Screensaver | **Omarchy.** The rain covers Omarchy's own screensaver whenever Omarchy opens it. Your idle timing, Stay Awake, the key that ends it and the lock that follows it all stay Omarchy's. |
 | Lock | **The theme.** Rain behind the password field whenever the theme is on. The lock is derived from your own, never shipped as a copy, so Omarchy's PAM and fingerprint flows keep arriving. |
-| Boot | **Style › Unlock.** The Enter the Matrix card types the lines from the film before login, and two more on the way out, different for a shutdown and for a reboot. Any other card boots that theme, with nothing of Matrix left. Either way it is one rebuild of the initramfs, and it asks for your password. |
+| Boot | **Appearance › Unlock.** The Enter the Matrix card types the lines from the film before login, and two more on the way out, different for a shutdown and for a reboot. Any other card boots that theme, with nothing of Matrix left. Either way it is one rebuild of the initramfs, and it asks for your password. |
 
 The command line has five commands:
 
@@ -69,7 +69,7 @@ The command line has five commands:
 omarchy-matrix status       # what is happening right now
 omarchy-matrix doctor       # put everything back, for example after 'omarchy refresh shell'
 omarchy-matrix update       # apply one named commit, then doctor (see below)
-omarchy-matrix boot on      # the boot splash, as Style › Unlock sets it
+omarchy-matrix boot on      # the boot splash, as Appearance › Unlock sets it
 omarchy-matrix uninstall
 ```
 
@@ -125,7 +125,7 @@ Automatic:
 |---|---|
 | `omarchy theme set enter-the-matrix` | The pack comes back, and Omarchy starts on the rain |
 | `omarchy theme set <other>` | The pack stands down |
-| `omarchy update` | The lock, the boot splash and the Style › Unlock row are derived again from the updated sources |
+| `omarchy update` | The lock, the boot splash and the Appearance › Unlock row are derived again from the updated sources |
 
 Standing down means: the plugin is disabled, Omarchy's screensaver shows
 without the rain, and **the lock clone is deleted**, with `omarchy plugin
@@ -146,7 +146,7 @@ The theme has to go somewhere, and it goes back to **the one you were using
 before you picked this one**. The `theme-set` hook writes that down every time you
 leave, because Omarchy overwrites `current/theme.name` before any hook runs and
 afterwards nobody knows. If you never left the theme, nothing is written down,
-and Omarchy's own theme picker asks, the same one as in Style › Theme. If you
+and Omarchy's own theme picker asks, the same one as in Appearance › Theme. If you
 pick nothing, you land on Tokyo Night, Omarchy's default.
 
 Pass `--keep-theme` if you want the colours and backgrounds to stay behind as an
@@ -162,7 +162,7 @@ stands down and opens the same terminal.
 
 ## Requirements
 
-Omarchy 4.0.3, `jq`, `git`, `python3`, and network for the install and for
+Omarchy 4.5, `jq`, `git`, `python3`, and network for the install and for
 updates. The boot splash also needs ImageMagick and `sudo`.
 
 ## What it touches on your system
@@ -173,9 +173,9 @@ bar:
 
 ```
 ~/.config/omarchy/plugins/io.github.tymurbogach.enter-the-matrix/       the plugin
-~/.config/omarchy/backgrounds/enter-the-matrix/0-live-rain.png          a link: the rain, in Style › Background
+~/.config/omarchy/backgrounds/enter-the-matrix/0-live-rain.png          a link: the rain, in Appearance › Background
 ~/.config/omarchy/hooks/{theme-set,post-update}.d/enter-the-matrix      generated wrappers
-~/.config/omarchy/extensions/omarchy-menu.jsonc                         one marked block: Style › Unlock, Remove › Theme
+~/.config/omarchy/extensions/omarchy-menu.jsonc                         one marked block: Appearance › Unlock, Remove › Theme
 ~/.config/omarchy/shell.json                                            Omarchy's list of enabled plugins
 ~/.local/bin/omarchy-matrix                                             link to the share dir
 ~/.local/share/omarchy-matrix/                                          the pack itself, and the theme to return to
@@ -189,13 +189,13 @@ The lock and Plymouth theme are derived. The initcpio files are an additive
 hook and configuration fragment. Neither overwrites an Omarchy source file.
 `omarchy.lock` stays where it was. Plymouth's `omarchy` theme changes only
 through Omarchy's own `omarchy plymouth set by theme`, the command that its
-Style › Unlock menu runs.
+Appearance › Unlock menu runs.
 
 The two menu rows are derived too: the pack builds each one from Omarchy's own
 row on every run, and if Omarchy changes a row, Omarchy's original comes back.
 
 "Only while it is on" is meant literally, including the system paths: another
-card in Style › Unlock hands the splash back **and** removes them. Nothing is
+card in Appearance › Unlock hands the splash back **and** removes them. Nothing is
 left behind, whether or not you ever
 uninstall.
 

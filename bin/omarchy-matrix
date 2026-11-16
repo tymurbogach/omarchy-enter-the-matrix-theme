@@ -9,9 +9,9 @@
 #   <cli> uninstall [--keep-theme]
 #
 # While this theme is current, the rain covers the desktop when the rain is the
-# background (Style > Background), covers Omarchy's screensaver whenever
+# background (Appearance > Background), covers Omarchy's screensaver whenever
 # Omarchy opens it, and sits behind the lock. The boot splash follows
-# Style > Unlock. Another theme stands the pack down.
+# Appearance > Unlock. Another theme stands the pack down.
 #
 # Which pack this is comes from provider.json, below: everything in here is
 # machinery, and the provider contributes the shader, its assets and its names.
@@ -378,7 +378,7 @@ stand_down() {
 
 # The screen before login. Needs sudo and rebuilds the initramfs, so it never
 # happens on its own: only on a first install that took the red pill, from
-# Omarchy's Style > Unlock (lib/derive-menu.py), or by hand.
+# Omarchy's Appearance > Unlock (lib/derive-menu.py), or by hand.
 #
 # derive-plymouth.py adds the animation as a theme of its own beside Omarchy's,
 # and makes it the default: one rebuild, like any other card in Unlock.
@@ -490,7 +490,7 @@ remove_plymouth_theme() {
   fi
 }
 
-# Two rows of Omarchy's menu (lib/derive-menu.py): in Style > Unlock the card of
+# Two rows of Omarchy's menu (lib/derive-menu.py): in Appearance > Unlock the card of
 # this theme boots animated, and Remove > Theme takes the pack with the theme.
 # They follow the system and not the theme, so they stay while another theme
 # is current.
@@ -553,7 +553,7 @@ cmd_hook_post_update() {
   if pack_in_effect || boot_applied; then
     if ! apply_unlock_menu >/dev/null 2>&1; then
       omarchy-notification-send -g 󰟵 "$DISPLAY_NAME" \
-        "Omarchy's menu has changed, so Style › Unlock or Remove › Theme is Omarchy's own for now." \
+        "Omarchy's menu has changed, so Appearance › Unlock or Remove › Theme is Omarchy's own for now." \
         2>/dev/null || true
     fi
   fi
@@ -606,7 +606,7 @@ cmd_status() {
   fi
 
   if ! pack_in_effect; then
-    printf '  Stood down: the theme is %s. Back with Style › Theme › %s.\n' \
+    printf '  Stood down: the theme is %s. Back with Appearance › Theme › %s.\n' \
       "$(current_theme)" "$DISPLAY_NAME"
     # Stood down should mean nothing enabled. Say so instead of looking clean.
     if plugin_enabled "$PLUGIN_ID" || lock_clone_id >/dev/null; then
@@ -621,7 +621,7 @@ cmd_status() {
       if on_live_background; then
         status_row on desktop "rain behind your windows"
       else
-        status_row off desktop "another background. For the rain: Style › Background"
+        status_row off desktop "another background. For the rain: Appearance › Background"
       fi
       # Not a fault: the user switched Omarchy's screensaver off, and the rain
       # only covers that one. doctor must not overrule the choice.
@@ -647,7 +647,7 @@ cmd_status() {
       status_row off boot "files of the Matrix splash left behind. For the animation: Appearance › Unlock or $SELF boot on. To remove it all: $SELF boot off"
     fi
   else
-    status_row off boot "Omarchy's splash. For the Matrix one: Style › Unlock"
+    status_row off boot "Omarchy's splash. For the Matrix one: Appearance › Unlock"
   fi
 }
 
@@ -662,7 +662,7 @@ cmd_doctor() {
   # whichever theme is current. Omarchy shows it only under this theme.
   theme=$(theme_dir) || theme=""
   [[ -z $theme ]] || offer_live_background "$theme"
-  # Style > Unlock belongs to the boot splash, which follows the system and not
+  # Appearance > Unlock belongs to the boot splash, which follows the system and not
   # the theme, so it is derived again whichever theme is current.
   apply_unlock_menu >/dev/null || failures=1
   if pack_in_effect; then
@@ -714,8 +714,8 @@ cmd_boot() {
 no_switches() {
   cat >&2 <<EOF
 $SELF: the pieces have no switches any more. Omarchy's own menus decide:
-  desktop rain   Style › Background, the rain
-  boot splash    Style › Unlock, the $DISPLAY_NAME card
+  desktop rain   Appearance › Background, the rain
+  boot splash    Appearance › Unlock, the $DISPLAY_NAME card
 The lock and the screensaver rain whenever the $DISPLAY_NAME theme is on.
 EOF
   exit 1
@@ -730,16 +730,16 @@ Usage: $SELF <command>
                               'omarchy refresh shell'
   update [--check]            Pull the latest version of this theme, then
                               doctor. --check only looks
-  boot on|off                 The Matrix boot splash, as Style › Unlock sets
+  boot on|off                 The Matrix boot splash, as Appearance › Unlock sets
                               it. Needs sudo
   uninstall [--keep-theme]    Remove the pack, and the theme unless
                               --keep-theme
 
 There is nothing to switch. While the $DISPLAY_NAME theme is on:
-  desktop       rains when the rain is the background (Style › Background)
+  desktop       rains when the rain is the background (Appearance › Background)
   screensaver   rains over Omarchy's screensaver, whenever Omarchy opens it
   lock          rains behind the password field
-  boot          types the lines from the film, when Style › Unlock picks it
+  boot          types the lines from the film, when Appearance › Unlock picks it
 USAGE
 }
 

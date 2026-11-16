@@ -2067,7 +2067,7 @@ def main():
 
         if stage_only:
             # What a designer wants to know. Somebody who picks a card in
-            # Style > Unlock does not, so an install prints none of it.
+            # Appearance > Unlock does not, so an install prints none of it.
             for mode in MODE_LINES:
                 steps, gate = storyboard(mode)
                 seconds = sum(frames for _, _, frames in steps) / FPS
@@ -2137,7 +2137,7 @@ def main():
             subprocess.run(["sudo", "plymouth-set-default-theme", THEME], check=True)
 
             # The same rebuild, with the same log, as Omarchy's own
-            # omarchy-plymouth-set: picking this card in Style > Unlock looks
+            # omarchy-plymouth-set: picking this card in Appearance > Unlock looks
             # the same as picking any other.
             print("  Rebuilding the initramfs…", flush=True)
             if shutil.which("limine-mkinitcpio"):

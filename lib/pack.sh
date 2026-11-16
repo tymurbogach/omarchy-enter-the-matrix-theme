@@ -42,7 +42,7 @@ pack_set_paths() {
 # theme's backgrounds/, so the theme alone never offers it. The pack links it
 # into Omarchy's folder for the user's own backgrounds of this theme. Omarchy
 # lists that folder first (omarchy-theme-set sorts the full paths), so a theme
-# set starts on the rain, and Style > Background shows it like any other.
+# set starts on the rain, and Appearance > Background shows it like any other.
 offer_live_background() { # <theme dir>
   local source="$1/$LIVE_BACKGROUND"
   [[ -n $LIVE_BACKGROUND && -f $source ]] || return 0

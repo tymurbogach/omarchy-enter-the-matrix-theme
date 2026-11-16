@@ -77,8 +77,8 @@ The two derived pieces are the two that can lock a user out.
 ### 5. Omarchy decides. Everything is a layer. Off must mean gone
 
 - The pack has no switches. Each piece follows a choice that Omarchy already
-  offers: Style › Background for the desktop, the idle service for the
-  screensaver, the theme for the lock, Style › Unlock for the boot splash.
+  offers: Appearance › Background for the desktop, the idle service for the
+  screensaver, the theme for the lock, Appearance › Unlock for the boot splash.
   Up to 1.2.x each piece also had a switch of its own. Two answers to one
   question could disagree, and the user had to learn both.
 - Another theme stands everything down: nothing rains, and no plugin of the
@@ -302,7 +302,7 @@ So the user's folder comes first, in the C locale and in en_US.UTF-8.
 That is the extension point for the rain. Up to 1.2.x, `doctor` forced the rain
 after every theme set of this theme, and so fought Omarchy's rotation. Now the
 rain's still lives outside `backgrounds/`, and the pack links it into the
-user's folder. A theme set then starts on the rain by itself, and Style ›
+user's folder. A theme set then starts on the rain by itself, and Appearance ›
 Background lists it like any other background. The theme alone never offers a
 still of rain that never moves.
 
@@ -320,7 +320,7 @@ sets the border colours but not the thickness or the rounding.
 only `action` replaces the good icon and label with blanks. The comment in the
 extensions file says otherwise, and it is wrong.
 
-**No hook runs after Style › Unlock, so the pack replaces the row.** The Unlock
+**No hook runs after Appearance › Unlock, so the pack replaces the row.** The Unlock
 row runs `omarchy-plymouth-set-by-theme`, which installs colours and one still
 image. No Plymouth command of Omarchy's calls `omarchy-hook`.
 
@@ -734,7 +734,7 @@ theme by a comparison of `logo.png` inside Omarchy's own folder, and our
 animated theme installs separately. Use `plymouth-set-default-theme` with no
 arguments.
 
-So Style › Unlock does not mark the Matrix card while the animation boots. The
+So Appearance › Unlock does not mark the Matrix card while the animation boots. The
 pack could: run Omarchy's `plymouth set by theme` first, then the animation.
 That was tried. It cost a second rebuild of the initramfs and a second screen
 of build log, for a highlight in a menu.
@@ -744,7 +744,7 @@ of build log, for a highlight in a menu.
 writable by group or others. On this machine, `/usr/share/plymouth/themes/omarchy`
 was owned by the user with mode 700, from the day Omarchy was installed.
 
-Every Style › Unlock choice then failed, with the pack and without it. The
+Every Appearance › Unlock choice then failed, with the pack and without it. The
 floating terminal still printed "Done!", because it prints that whatever the
 command returned. The pack's step after it never ran, so nothing else said so.
 
@@ -821,7 +821,7 @@ release.
      0 %, part way and full. No scenario alone reaches the dots or the track:
      see the trap about the doctored stage. The two exit splashes are
      `--mode shutdown` and `--mode reboot`, and they need no reboot either.
-   - Style › Unlock: pick the Matrix card. Omarchy's terminal must ask for the
+   - Appearance › Unlock: pick the Matrix card. Omarchy's terminal must ask for the
      password once, rebuild the initramfs once, and look like any other card.
      Then `plymouth-set-default-theme` prints `omarchy-matrix`. Pick another
      card: it then prints `omarchy`, `omarchy plymouth current` names that
@@ -831,11 +831,11 @@ release.
    blurred wallpaper. Only the picture showed the fault.
 4. **Change each of Omarchy's choices, one at a time.** Each time, check that
    the other pieces did not move.
-   - Style › Background: pick a photograph. The desktop rain goes, and the
+   - Appearance › Background: pick a photograph. The desktop rain goes, and the
      lock and the screensaver still rain. Then pick the rain again.
    - `omarchy toggle screensaver`: no screensaver opens, so no rain either,
      and `status` says why. Toggle it back.
-   - Style › Unlock: see phase 3.
+   - Appearance › Unlock: see phase 3.
 5. **Switch to another theme and back.**
    - Away: nothing rains, nothing has a tick, and Omarchy's own lock and
      screensaver answer again. Nothing of Omarchy's stays disabled, and no
@@ -843,8 +843,8 @@ release.
    - Back: the background is the rain again with no command of ours, and the
      lock rains. Each way restarts the shell once.
 6. **Uninstall, and compare the machine with phase 1.** Anything that is still
-   there is a bug, not a detail. Once per release, uninstall through Style ›
-   Remove › Theme instead of the command.
+   there is a bug, not a detail. Once per release, uninstall through Remove ›
+   Theme instead of the command.
 
 ### Run the test without a keyboard or a password
 

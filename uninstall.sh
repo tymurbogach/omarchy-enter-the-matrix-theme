@@ -85,7 +85,7 @@ remove_plugin "$PLUGIN_ID"
 # An install older than 1.3 also had a bar widget.
 retire_widget
 
-# Style > Unlock and Remove > Theme go back to Omarchy's own rows
+# Appearance > Unlock and Remove > Theme go back to Omarchy's own rows
 # (lib/derive-menu.py). An older install has no such block, and no deriver to
 # take it out.
 if [[ -x $HERE/lib/derive-menu.py ]]; then
@@ -118,7 +118,7 @@ current_plymouth=$(plymouth-set-default-theme 2>/dev/null) ||
 # whenever the folder exists -- and it exists after any `boot off`, which is
 # precisely the case the old `if` skipped, leaving the theme on disk forever.
 #
-# Omarchy's own still splash can carry this theme too: Style > Unlock installs
+# Omarchy's own still splash can carry this theme too: Appearance > Unlock installs
 # it whenever the pack's row is not in charge. With the theme about to go, that
 # goes as well. --keep-theme keeps it, like the theme.
 omarchy_plymouth=$(omarchy-plymouth-current 2>/dev/null) || omarchy_plymouth=""
@@ -234,7 +234,7 @@ theme_exists() {
 #
 # Omarchy keeps no theme history, so an install that never left this theme has
 # nothing written down. Then Omarchy's own theme picker asks, the one that
-# Style › Theme opens (`theme=$(omarchy-theme-switcher)` in Omarchy's menu).
+# Appearance › Theme opens (`theme=$(omarchy-theme-switcher)` in Omarchy's menu).
 # It used to be a list in the terminal, with the first stock theme as the
 # default: alphabetical, so everybody landed on catppuccin.
 #
@@ -274,7 +274,7 @@ echo "· removing the theme"
 rm -rf "$THEME_DIR"
 # Omarchy remembers a background per theme, and a hook of the user's may read it.
 rm -f "$HOME/.local/state/omarchy/backgrounds/$SLUG"
-# The card that Style > Unlock drew for this theme. Omarchy keeps it in a cache
+# The card that Appearance > Unlock drew for this theme. Omarchy keeps it in a cache
 # and draws it again for any theme that is still installed.
 rm -f "$HOME/.cache/omarchy/unlock-selector/previews/$SLUG.png"
 # The rain's link in the folder for the user's own backgrounds. Only the link:

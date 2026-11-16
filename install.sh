@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the Enter the Matrix pack on top of the theme: the rain plugin, the
-# CLI and the hooks. After that, Omarchy's own menus decide: Style > Background
-# for the desktop rain, Style > Unlock for the boot splash.
+# CLI and the hooks. After that, Omarchy's own menus decide: Appearance > Background
+# for the desktop rain, Appearance > Unlock for the boot splash.
 #
 #   ./install.sh            asks once, on a first install, when there is a terminal
 #   ./install.sh --sync     copies the files and nothing else
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-TESTED_ON="4.0.3"
+TESTED_ON="4.5.0"
 
 # --sync copies the files and stops: no question, no doctor, no boot splash.
 # It is what `omarchy-matrix doctor` calls when it notices the theme directory
@@ -300,7 +300,7 @@ in_effect=0
 [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null) != "$SLUG" ]] || in_effect=1
 
 # The red pill starts on the rain. After that the background is Omarchy's: a
-# theme set starts on the rain by itself, and Style > Background changes it.
+# theme set starts on the rain by itself, and Appearance > Background changes it.
 if ((FIRST_INSTALL && in_effect)) && [[ -e $LIVE_LINK ]]; then
   omarchy-theme-bg-set "$LIVE_LINK" >/dev/null 2>&1 || true
 fi
@@ -312,11 +312,11 @@ else
   echo "  ${G}${BOLD}Done.${OFF} ${DIM}The pack is up to date.${OFF}"
 fi
 echo
-((in_effect)) || echo "  It comes on with the theme: Style › Theme › $DISPLAY_NAME."
-((!boot_skipped)) || echo "  No boot splash yet. Pick it in Style › Unlock, on the $DISPLAY_NAME card."
+((in_effect)) || echo "  It comes on with the theme: Appearance › Theme › $DISPLAY_NAME."
+((!boot_skipped)) || echo "  No boot splash yet. Pick it in Appearance › Unlock, on the $DISPLAY_NAME card."
 ((!problems)) || echo "  Something did not come up. See what: $CLI status"
 cat <<EOF
-  ${DIM}Desktop rain${OFF}   Style › Background, the rain
-  ${DIM}Boot splash${OFF}    Style › Unlock, the $DISPLAY_NAME card
+  ${DIM}Desktop rain${OFF}   Appearance › Background, the rain
+  ${DIM}Boot splash${OFF}    Appearance › Unlock, the $DISPLAY_NAME card
   ${DIM}Remove${OFF}         $CLI uninstall
 EOF
