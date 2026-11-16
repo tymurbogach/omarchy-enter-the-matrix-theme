@@ -396,19 +396,23 @@ initramfs_rebuild() {
   fi
 }
 
+# The hook lives in /etc, not below the package-owned Omarchy tree. One
+# definition, so Off cannot miss a file. Tests point ETC_ROOT at a scratch
+# dir; empty means the real /etc.
+ETC_ROOT="${OMARCHY_MATRIX_ETC_ROOT:-}"
+EARLY_HOOK="$ETC_ROOT/etc/initcpio/hooks/omarchy-matrix-backlight"
+EARLY_INSTALL="$ETC_ROOT/etc/initcpio/install/omarchy-matrix-backlight"
+EARLY_CONFIG="$ETC_ROOT/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+
 early_backlight_present() {
-  [[ -e /etc/initcpio/hooks/omarchy-matrix-backlight ||
-     -e /etc/initcpio/install/omarchy-matrix-backlight ||
-     -e /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf ]]
+  [[ -e $EARLY_HOOK || -e $EARLY_INSTALL || -e $EARLY_CONFIG ]]
 }
 
-# The hook lives in /etc, not below the package-owned Omarchy tree. Remove it
-# before a rebuild, otherwise an old initramfs would still run it after Off.
+# Remove it before a rebuild, otherwise an old initramfs would still run it
+# after Off.
 remove_early_backlight() {
   early_backlight_present || return 1
-  sudo rm -f /etc/initcpio/hooks/omarchy-matrix-backlight \
-    /etc/initcpio/install/omarchy-matrix-backlight \
-    /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight
+  sudo rm -f "$EARLY_HOOK" "$EARLY_INSTALL" "$EARLY_CONFIG"
 }
 
 # Only reset when a Matrix splash is the one installed: the animation, or

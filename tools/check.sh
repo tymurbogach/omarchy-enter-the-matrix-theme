@@ -326,6 +326,105 @@ check_early_backlight() {
     fail "the early backlight hook accepts an unsafe device name"
 }
 
+# --- boot off removes the hook ------------------------------------------------
+# Off must leave nothing in /etc, or the next rebuild looks for a missing
+# hook. Runs the real remove_early_backlight with a stub sudo and a scratch
+# ETC_ROOT, so no real sudo runs and /etc is never touched.
+
+check_early_backlight_removal() {
+  section "boot off removes the early backlight hook"
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/home" "$tmp/fakebin" \
+    "$tmp/etc/initcpio/hooks" "$tmp/etc/initcpio/install" "$tmp/etc/mkinitcpio.conf.d"
+  touch "$tmp/etc/initcpio/hooks/omarchy-matrix-backlight" \
+    "$tmp/etc/initcpio/install/omarchy-matrix-backlight" \
+    "$tmp/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+  cat >"$tmp/fakebin/sudo" <<'SH'
+#!/bin/bash
+# Test double: no privilege, just log and run. Refuse any path outside the
+# scratch root, so a run as root can never touch the real /etc.
+echo "$*" >>"$SUDO_LOG"
+for arg in "${@:2}"; do [[ $arg == -* || $arg == "$SCRATCH"/* ]] || exit 1; done
+exec "$@"
+SH
+  chmod +x "$tmp/fakebin/sudo"
+  if ! HOME="$tmp/home" OMARCHY_MATRIX_ETC_ROOT="$tmp" SUDO_LOG="$tmp/sudo.log" SCRATCH="$tmp" \
+    PATH="$tmp/fakebin:$PATH" \
+    bash -c 'source "$0" -h >/dev/null; set +e; remove_early_backlight' \
+    "$ROOT/bin/omarchy-matrix"; then
+    fail "remove_early_backlight did not remove the hook files"
+    return 0
+  fi
+  local f
+  for f in \
+    "$tmp/etc/initcpio/hooks/omarchy-matrix-backlight" \
+    "$tmp/etc/initcpio/install/omarchy-matrix-backlight" \
+    "$tmp/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"; do
+    if [[ -e $f ]]; then
+      fail "hook file stayed: ${f#"$tmp"}"
+    fi
+  done
+  if HOME="$tmp/home" OMARCHY_MATRIX_ETC_ROOT="$tmp" \
+    PATH="$tmp/fakebin:$PATH" \
+    bash -c 'source "$0" -h >/dev/null; set +e; early_backlight_present' \
+    "$ROOT/bin/omarchy-matrix"; then
+    fail "early_backlight_present is still true after removal"
+  fi
+  grep -q "99-omarchy-matrix-backlight.conf" "$tmp/sudo.log" 2>/dev/null ||
+    fail "sudo was not asked to remove the drop-in with its .conf suffix"
+}
+
+check_early_backlight_paths() {
+  section "early backlight paths agree"
+  if python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+errors = []
+def bad(message):
+    errors.append(message)
+want = {
+    "hook": "/etc/initcpio/hooks/omarchy-matrix-backlight",
+    "install": "/etc/initcpio/install/omarchy-matrix-backlight",
+    "config": "/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf",
+}
+cli = (root / "bin/omarchy-matrix").read_text()
+# The CLI prefixes each path with the test root, empty on a real machine.
+normalized = cli.replace("$ETC_ROOT", "")
+if "OMARCHY_MATRIX_ETC_ROOT" not in cli:
+    bad("bin/omarchy-matrix has no test-overridable etc root")
+for path in want.values():
+    if path not in normalized:
+        bad(f"bin/omarchy-matrix does not define {path}")
+# The drop-in without its suffix is the bug this guards.
+if re.search(r"99-omarchy-matrix-backlight(?!\.conf)", normalized):
+    bad("bin/omarchy-matrix names the drop-in without its .conf suffix")
+uninstall = (root / "uninstall.sh").read_text()
+for path in want.values():
+    if path not in uninstall:
+        bad(f"uninstall.sh does not remove {path}")
+if re.search(r"99-omarchy-matrix-backlight(?!\.conf)", uninstall):
+    bad("uninstall.sh names the drop-in without its .conf suffix")
+plymouth = (root / "lib/derive-plymouth.py").read_text()
+names = {"hook": "INITCPIO_HOOK", "install": "INITCPIO_INSTALL", "config": "INITCPIO_CONFIG"}
+for key, name in names.items():
+    m = re.search(rf'^{name}\s*=\s*Path\("([^"]+)"\)', plymouth, re.M)
+    if not m:
+        bad(f"derive-plymouth.py does not define {name}")
+    elif m.group(1) != want[key]:
+        bad(f"derive-plymouth.py {name} is {m.group(1)}, want {want[key]}")
+for message in errors:
+    print(f"  FAIL: {message}")
+sys.exit(1 if errors else 0)
+PY
+  then
+    :
+  else
+    failures=$((failures + 1))
+  fi
+}
+
 # --- M4 ownership fixtures ---------------------------------------------------
 # The one rule, in both languages: clonedFrom == omarchy.lock AND
 # (derivedBy == cli OR the rain QML inside). A hand-made clone matches only the
@@ -560,6 +659,8 @@ check_validate "$ROOT"
 check_main_coherence
 check_repo_hygiene
 check_early_backlight
+check_early_backlight_removal
+check_early_backlight_paths
 check_ownership
 check_menu
 
