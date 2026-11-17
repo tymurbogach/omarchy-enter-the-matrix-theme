@@ -86,23 +86,22 @@ OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-menu.py" --remove >/dev/nu
   echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
 
 # The boot layer owns the Plymouth theme and one initramfs hook. Both live
-# outside home, need a password and must go before the final rebuild.
+# outside home, need a password and must go before the final rebuild. The
+# paths, the presence test, the rebuild and the default-theme reader live once
+# in lib/pack.sh, so this script and boot off cannot drift apart. This is not
+# boot_off: with --keep-theme a still splash carrying this theme stays, while
+# boot_off would reset it.
 early_backlight_removed=0
-if [[ -e /etc/initcpio/hooks/omarchy-matrix-backlight ||
-      -e /etc/initcpio/install/omarchy-matrix-backlight ||
-      -e /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf ]]; then
+if early_backlight_present; then
   echo "· removing the early boot backlight hook (needs your password)"
-  if sudo rm -f /etc/initcpio/hooks/omarchy-matrix-backlight \
-      /etc/initcpio/install/omarchy-matrix-backlight \
-      /etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf; then
+  if sudo rm -f "$EARLY_HOOK" "$EARLY_INSTALL" "$EARLY_CONFIG"; then
     early_backlight_removed=1
   else
     echo "  skipped — remove the Matrix backlight hook from /etc/initcpio later" >&2
   fi
 fi
 
-current_plymouth=$(plymouth-set-default-theme 2>/dev/null) ||
-  current_plymouth=$(sed -n 's/^Theme=//p' /etc/plymouth/plymouthd.conf 2>/dev/null)
+current_plymouth=$(current_plymouth_theme)
 
 # Two separate questions, and they used to be conflated. Handing the splash back
 # is only needed when OURS is the live one. Deleting the folder is needed
@@ -126,13 +125,13 @@ fi
 
 if ((early_backlight_removed && !boot_reset)); then
   echo "· rebuilding the initramfs without the Matrix backlight hook"
-  if command -v limine-mkinitcpio >/dev/null 2>&1; then
-    sudo limine-mkinitcpio ||
+  initramfs_rebuild || {
+    if command -v limine-mkinitcpio >/dev/null 2>&1; then
       echo "  skipped — rebuild later with: sudo limine-mkinitcpio" >&2
-  else
-    sudo mkinitcpio -P ||
+    else
       echo "  skipped — rebuild later with: sudo mkinitcpio -P" >&2
-  fi
+    fi
+  }
 fi
 
 # Asked again, AFTER the reset. Never before it: removing the folder of a theme

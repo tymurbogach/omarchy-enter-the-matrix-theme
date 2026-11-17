@@ -214,6 +214,38 @@ theme_exists() {
   [[ -d "$HOME/.config/omarchy/themes/$1" || -d "${OMARCHY_PATH:-/usr/share/omarchy}/themes/$1" ]]
 }
 
+# --- the boot splash's early layer ------------------------------------------------
+# The hook lives in /etc, not below the package-owned Omarchy tree. One
+# definition, so boot off and uninstall cannot miss a file. Tests point
+# ETC_ROOT at a scratch dir; empty means the real /etc.
+ETC_ROOT="${OMARCHY_MATRIX_ETC_ROOT:-}"
+EARLY_HOOK="$ETC_ROOT/etc/initcpio/hooks/omarchy-matrix-backlight"
+EARLY_INSTALL="$ETC_ROOT/etc/initcpio/install/omarchy-matrix-backlight"
+EARLY_CONFIG="$ETC_ROOT/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+
+# Whether any file of the early backlight layer is still in /etc.
+early_backlight_present() {
+  [[ -e $EARLY_HOOK || -e $EARLY_INSTALL || -e $EARLY_CONFIG ]]
+}
+
+# Rebuild the initramfs the way Omarchy does: Limine's wrapper when it is
+# there, plain mkinitcpio otherwise. Needs sudo; callers say why themselves.
+initramfs_rebuild() {
+  if command -v limine-mkinitcpio >/dev/null 2>&1; then
+    sudo limine-mkinitcpio
+  else
+    sudo mkinitcpio -P
+  fi
+}
+
+# The Plymouth theme that is the default right now, without sudo.
+# `plymouth-set-default-theme` with no arguments prints it; when that reader
+# is missing, the config file it writes says the same.
+current_plymouth_theme() {
+  plymouth-set-default-theme 2>/dev/null ||
+    sed -n 's/^Theme=//p' /etc/plymouth/plymouthd.conf 2>/dev/null
+}
+
 # A plugin folder carrying a .git checkout is managed by hand, and the pack
 # leaves it alone: staging over it would take the checkout with it, and
 # judging it stale would send --sync after a checkout nothing may overwrite.

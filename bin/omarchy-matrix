@@ -69,10 +69,7 @@ pack_in_effect() {
 # and ours is a separate theme that it cannot see. `plymouth-set-default-theme`
 # with no arguments prints the real answer and needs no sudo.
 boot_applied() {
-  local current
-  current=$(plymouth-set-default-theme 2>/dev/null) ||
-    current=$(sed -n 's/^Theme=//p' /etc/plymouth/plymouthd.conf 2>/dev/null)
-  [[ $current == "$PLYMOUTH_THEME" ]]
+  [[ $(current_plymouth_theme) == "$PLYMOUTH_THEME" ]]
 }
 
 # Omarchy's own still splash carries this theme when its logo is the theme's
@@ -385,31 +382,15 @@ derive_boot() {
   OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$ROOT/lib/derive-plymouth.py"
 }
 
-initramfs_rebuild() {
-  if command -v limine-mkinitcpio >/dev/null 2>&1; then
-    sudo limine-mkinitcpio
-  else
-    sudo mkinitcpio -P
-  fi
-}
-
-# The hook lives in /etc, not below the package-owned Omarchy tree. One
-# definition, so Off cannot miss a file. Tests point ETC_ROOT at a scratch
-# dir; empty means the real /etc.
-ETC_ROOT="${OMARCHY_MATRIX_ETC_ROOT:-}"
-EARLY_HOOK="$ETC_ROOT/etc/initcpio/hooks/omarchy-matrix-backlight"
-EARLY_INSTALL="$ETC_ROOT/etc/initcpio/install/omarchy-matrix-backlight"
-EARLY_CONFIG="$ETC_ROOT/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+# The hook paths, the presence test, the rebuild and the default-theme reader
+# live once in lib/pack.sh, so Off cannot miss a file. Tests point ETC_ROOT
+# at a scratch dir; empty means the real /etc.
 
 # Omarchy's own splash folder. The path comes from a variable so tests can
 # point it at a scratch dir. See CONTRIBUTING.md: when this folder is not
 # owned by root or is writable by group or others, every Appearance › Unlock
 # choice fails while the terminal still prints "Done!".
 OMARCHY_SPLASH_DIR="${OMARCHY_MATRIX_OMARCHY_SPLASH_DIR:-/usr/share/plymouth/themes/omarchy}"
-
-early_backlight_present() {
-  [[ -e $EARLY_HOOK || -e $EARLY_INSTALL || -e $EARLY_CONFIG ]]
-}
 
 # The Matrix theme folder. Its own function so tests can stub it.
 matrix_theme_dir_present() {

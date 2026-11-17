@@ -254,10 +254,22 @@ if early_sudo == -1 or asset_stage == -1 or early_sudo > asset_stage:
 for needle in (
     'remove_early_backlight',
     'initramfs_rebuild',
-    '99-omarchy-matrix-backlight.conf',
+    'early_backlight_present',
+    'current_plymouth_theme',
 ):
     if needle not in cli:
         bad(f"bin/omarchy-matrix does not remove its early backlight layer ({needle})")
+pack = (root / "lib/pack.sh").read_text()
+for needle in (
+    'EARLY_HOOK',
+    'EARLY_INSTALL',
+    'EARLY_CONFIG',
+    'early_backlight_present',
+    'initramfs_rebuild',
+    'current_plymouth_theme',
+):
+    if needle not in pack:
+        bad(f"lib/pack.sh does not hold the single copy ({needle})")
 for message in errors:
     print(f"  FAIL: {message}")
 sys.exit(1 if errors else 0)
@@ -385,23 +397,43 @@ want = {
     "install": "/etc/initcpio/install/omarchy-matrix-backlight",
     "config": "/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf",
 }
+pack = (root / "lib/pack.sh").read_text()
 cli = (root / "bin/omarchy-matrix").read_text()
-# The CLI prefixes each path with the test root, empty on a real machine.
-normalized = cli.replace("$ETC_ROOT", "")
-if "OMARCHY_MATRIX_ETC_ROOT" not in cli:
-    bad("bin/omarchy-matrix has no test-overridable etc root")
-for path in want.values():
-    if path not in normalized:
-        bad(f"bin/omarchy-matrix does not define {path}")
-# The drop-in without its suffix is the bug this guards.
-if re.search(r"99-omarchy-matrix-backlight(?!\.conf)", normalized):
-    bad("bin/omarchy-matrix names the drop-in without its .conf suffix")
 uninstall = (root / "uninstall.sh").read_text()
+# The single copy lives in lib/pack.sh, with the test-overridable etc root.
 for path in want.values():
-    if path not in uninstall:
-        bad(f"uninstall.sh does not remove {path}")
-if re.search(r"99-omarchy-matrix-backlight(?!\.conf)", uninstall):
-    bad("uninstall.sh names the drop-in without its .conf suffix")
+    if path not in pack:
+        bad(f"lib/pack.sh does not define {path}")
+if "OMARCHY_MATRIX_ETC_ROOT" not in pack:
+    bad("lib/pack.sh has no test-overridable etc root")
+# Neither consumer repeats a path literal. The user-facing skip message names
+# /etc/initcpio, so it is out of the comparison, not out of the script.
+code = "\n".join(
+    line for line in uninstall.splitlines()
+    if "skipped \u2014" not in line
+)
+if any(path in cli for path in want.values()):
+    bad("bin/omarchy-matrix repeats an early backlight path; use lib/pack.sh")
+for path in want.values():
+    if path in code:
+        bad(f"uninstall.sh repeats {path}; use lib/pack.sh")
+# Both read through the shared names instead.
+for name in ("$EARLY_HOOK", "$EARLY_INSTALL", "$EARLY_CONFIG",
+             "early_backlight_present", "initramfs_rebuild",
+             "current_plymouth_theme"):
+    if name not in cli:
+        bad(f"bin/omarchy-matrix does not use the shared {name}")
+    if name not in uninstall:
+        bad(f"uninstall.sh does not use the shared {name}")
+# uninstall must not call boot_off: with --keep-theme a still splash carrying
+# this theme stays, while boot_off would reset it.
+if re.search(r"^\s*boot_off\b", code, re.M):
+    bad("uninstall.sh calls boot_off, which resets a still splash --keep-theme keeps")
+# The drop-in without its suffix is the bug this guards.
+for text, owner in ((pack, "lib/pack.sh"), (cli, "bin/omarchy-matrix"),
+                    (code, "uninstall.sh")):
+    if re.search(r"99-omarchy-matrix-backlight(?!\.conf)", text):
+        bad(f"{owner} names the drop-in without its .conf suffix")
 plymouth = (root / "lib/derive-plymouth.py").read_text()
 names = {"hook": "INITCPIO_HOOK", "install": "INITCPIO_INSTALL", "config": "INITCPIO_CONFIG"}
 for key, name in names.items():
@@ -418,6 +450,242 @@ PY
     :
   else
     failures=$((failures + 1))
+  fi
+}
+
+# --- uninstall removes the boot splash ---------------------------------------
+# The uninstall path, end to end, with a stub sudo and a scratch machine: a
+# scratch HOME, a scratch /etc (OMARCHY_MATRIX_ETC_ROOT) and a scratch
+# /usr/share, which the sudo stub maps in. sudo only logs and runs, and
+# refuses any other absolute system path, so the real /etc and /usr are never
+# touched. Each case asserts every removal and the exact rebuild behavior.
+# The negative control mutates one removal out of a scratch copy of
+# uninstall.sh and requires the same assertions to fail.
+
+uninstall_write_stubs() { # <root>: canned commands reading $STUB_STATE
+  local root="$1" quiet
+  mkdir -p "$root/fakebin"
+  cat >"$root/fakebin/sudo" <<'SH'
+#!/bin/bash
+# Test double: no privilege, just log and run. /usr/share maps into the
+# scratch root; any other absolute system path is refused, so a run as root
+# could never touch the real machine.
+echo "$*" >>"$SUDO_LOG"
+mapped=()
+for arg in "$@"; do
+  case "$arg" in
+    /usr/share/*) mapped+=("$SCRATCH$arg") ;;
+    *) mapped+=("$arg") ;;
+  esac
+done
+for arg in "${mapped[@]}"; do
+  case "$arg" in
+    /etc/*|/usr/*) echo "stub sudo refuses $arg" >&2; exit 1 ;;
+  esac
+done
+exec "${mapped[@]}"
+SH
+  cat >"$root/fakebin/plymouth-set-default-theme" <<'SH'
+#!/bin/bash
+cat "$STUB_STATE/current_plymouth"
+SH
+  cat >"$root/fakebin/omarchy-plymouth-current" <<'SH'
+#!/bin/bash
+cat "$STUB_STATE/omarchy_current"
+SH
+  cat >"$root/fakebin/omarchy-plymouth-reset" <<'SH'
+#!/bin/bash
+echo "reset" >>"$STUB_STATE/calls.log"
+if [[ -f $STUB_STATE/reset_fail ]]; then exit 1; fi
+printf 'omarchy\n' >"$STUB_STATE/current_plymouth"
+SH
+  cat >"$root/fakebin/limine-mkinitcpio" <<'SH'
+#!/bin/bash
+echo "rebuild" >>"$STUB_STATE/calls.log"
+SH
+  cat >"$root/fakebin/mkinitcpio" <<'SH'
+#!/bin/bash
+echo "rebuild" >>"$STUB_STATE/calls.log"
+SH
+  for quiet in omarchy-plugin-remove fc-cache omarchy-shell omarchy-theme-bg-next \
+    omarchy-theme-set omarchy-theme-switcher; do
+    printf '#!/bin/bash\nexit 0\n' >"$root/fakebin/$quiet"
+  done
+  chmod +x "$root/fakebin/"*
+}
+
+uninstall_setup_case() { # <root> <theme> <current> <omarchy>: fresh fixtures
+  local root="$1" theme="$2"
+  rm -rf "${root:?}/home" "${root:?}/state" "${root:?}/etc" "${root:?}/usr" \
+    "$root/sudo.log" "$root/out.log"
+  mkdir -p "$root/home" "$root/state" \
+    "$root/etc/initcpio/hooks" "$root/etc/initcpio/install" \
+    "$root/etc/mkinitcpio.conf.d" \
+    "$root/usr/share/plymouth/themes/$theme" \
+    "$root/usr/share/fonts/omarchy-matrix"
+  touch "$root/etc/initcpio/hooks/omarchy-matrix-backlight" \
+    "$root/etc/initcpio/install/omarchy-matrix-backlight" \
+    "$root/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+  printf 'x\n' >"$root/usr/share/plymouth/themes/$theme/$theme.plymouth"
+  printf 'x\n' >"$root/usr/share/fonts/omarchy-matrix/face.ttf"
+  printf '%s\n' "$3" >"$root/state/current_plymouth"
+  printf '%s\n' "$4" >"$root/state/omarchy_current"
+  chmod +x "$root/fakebin/limine-mkinitcpio"
+}
+
+uninstall_run() { # <root> <script> [args...]
+  local root="$1" script="$2"
+  shift 2
+  HOME="$root/home" OMARCHY_MATRIX_PROVIDER="$ROOT/provider.json" \
+    OMARCHY_MATRIX_ETC_ROOT="$root" SUDO_LOG="$root/sudo.log" SCRATCH="$root" \
+    STUB_STATE="$root/state" PATH="$root/fakebin:$PATH" \
+    bash "$script" "$@" >"$root/out.log" 2>&1
+}
+
+uninstall_assert_gone() { # <root> <theme>: every splash file is gone
+  local root="$1" theme="$2" f ok=0
+  for f in \
+    "$root/etc/initcpio/hooks/omarchy-matrix-backlight" \
+    "$root/etc/initcpio/install/omarchy-matrix-backlight" \
+    "$root/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf" \
+    "$root/usr/share/plymouth/themes/$theme" \
+    "$root/usr/share/fonts/omarchy-matrix"; do
+    if [[ -e $f ]]; then
+      echo "left behind: ${f#"$root"}" >&2
+      ok=1
+    fi
+  done
+  return $ok
+}
+
+uninstall_rebuilds() { # <root>: how many initramfs rebuilds sudo ran
+  local root="$1" n
+  n=$(grep -c -e "^limine-mkinitcpio$" -e "^mkinitcpio -P$" \
+    "$root/sudo.log" 2>/dev/null) || n=0
+  printf '%s\n' "$n"
+}
+
+uninstall_did_reset() { # <root>
+  grep -qc "^reset$" "$1/state/calls.log" 2>/dev/null
+}
+
+check_uninstall_removal() {
+  section "uninstall removes the boot splash (stub sudo)"
+  local tmp slug theme
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  slug=$(jq -r .slug "$ROOT/provider.json")
+  theme=$(jq -r .plymouth.theme "$ROOT/provider.json")
+  uninstall_write_stubs "$tmp"
+
+  # The animation is the default, so uninstall resets instead of rebuilding.
+  # Every file goes, the reset runs, no rebuild runs.
+  uninstall_setup_case "$tmp" "$theme" "$theme" "other"
+  uninstall_run "$tmp" "$ROOT/uninstall.sh" ||
+    fail "uninstall exits nonzero on the reset path"
+  uninstall_assert_gone "$tmp" "$theme" ||
+    fail "uninstall leaves splash files behind on the reset path"
+  uninstall_did_reset "$tmp" ||
+    fail "uninstall does not reset while the animation is the default"
+  [[ $(uninstall_rebuilds "$tmp") == 0 ]] ||
+    fail "uninstall rebuilds after a reset"
+
+  # No Matrix splash is the default, so the hook removal ends in exactly one
+  # rebuild and no reset.
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  uninstall_run "$tmp" "$ROOT/uninstall.sh" ||
+    fail "uninstall exits nonzero on the rebuild path"
+  uninstall_assert_gone "$tmp" "$theme" ||
+    fail "uninstall leaves splash files behind on the rebuild path"
+  uninstall_did_reset "$tmp" &&
+    fail "uninstall resets when no Matrix splash is the default"
+  [[ $(uninstall_rebuilds "$tmp") == 1 ]] ||
+    fail "uninstall does not rebuild exactly once on the rebuild path"
+  grep -q "^limine-mkinitcpio$" "$tmp/sudo.log" 2>/dev/null ||
+    fail "uninstall rebuilds without limine-mkinitcpio"
+
+  # --keep-theme: a still splash carrying this theme stays (no reset), but the
+  # files go and the rebuild still runs exactly once.
+  uninstall_setup_case "$tmp" "$theme" "other" "$slug"
+  uninstall_run "$tmp" "$ROOT/uninstall.sh" --keep-theme ||
+    fail "uninstall --keep-theme exits nonzero"
+  uninstall_assert_gone "$tmp" "$theme" ||
+    fail "uninstall --keep-theme leaves splash files behind"
+  uninstall_did_reset "$tmp" &&
+    fail "uninstall --keep-theme resets a still splash it must keep"
+  [[ $(uninstall_rebuilds "$tmp") == 1 ]] ||
+    fail "uninstall --keep-theme does not rebuild exactly once"
+
+  # Nothing installed, nothing live: no reset, no rebuild, no failure.
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  rm -f "$tmp/etc/initcpio/hooks/omarchy-matrix-backlight" \
+    "$tmp/etc/initcpio/install/omarchy-matrix-backlight" \
+    "$tmp/etc/mkinitcpio.conf.d/99-omarchy-matrix-backlight.conf"
+  rm -rf "$tmp/usr/share/plymouth/themes/$theme" \
+    "$tmp/usr/share/fonts/omarchy-matrix"
+  uninstall_run "$tmp" "$ROOT/uninstall.sh" ||
+    fail "uninstall exits nonzero with nothing installed"
+  uninstall_did_reset "$tmp" &&
+    fail "uninstall resets with nothing installed"
+  [[ $(uninstall_rebuilds "$tmp") == 0 ]] ||
+    fail "uninstall rebuilds with nothing installed"
+
+  # Without Limine's wrapper the plain rebuild runs instead, still once. The
+  # live machine has a real limine-mkinitcpio, so hide the name behind an
+  # exported `command` while the uninstall runs, then undefine it again.
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  command() {
+    if [[ ${1:-} == -v && ${2:-} == limine-mkinitcpio ]]; then return 1; fi
+    builtin command "$@"
+  }
+  export -f command
+  uninstall_run "$tmp" "$ROOT/uninstall.sh" ||
+    fail "uninstall exits nonzero on the mkinitcpio path"
+  unset -f command
+  uninstall_assert_gone "$tmp" "$theme" ||
+    fail "uninstall leaves splash files behind on the mkinitcpio path"
+  grep -q "^mkinitcpio -P$" "$tmp/sudo.log" 2>/dev/null ||
+    fail "uninstall does not fall back to mkinitcpio -P"
+  [[ $(uninstall_rebuilds "$tmp") == 1 ]] ||
+    fail "uninstall does not rebuild exactly once on the mkinitcpio path"
+
+  # Negative control: the same assertions must fail when any removal line is
+  # omitted. Each mutation copies uninstall.sh beside symlinks to the repo's
+  # lib/ and provider.json, neuters one removal, and must leave its file
+  # behind (or skip the rebuild).
+  mkdir -p "$tmp/mut"
+  ln -sfn "$ROOT/lib" "$tmp/mut/lib"
+  # Without the /etc removal the hook files stay.
+  sed 's|sudo rm -f "$EARLY_HOOK" "$EARLY_INSTALL" "$EARLY_CONFIG"|false|' \
+    "$ROOT/uninstall.sh" >"$tmp/mut/uninstall.sh"
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  uninstall_run "$tmp" "$tmp/mut/uninstall.sh" >/dev/null 2>&1 || true
+  if uninstall_assert_gone "$tmp" "$theme" 2>/dev/null; then
+    fail "negative control: omitting the hook removal still passes"
+  fi
+  # Without the theme removal the theme folder stays.
+  sed 's|sudo rm -rf "/usr/share/plymouth/themes/\$PLYMOUTH_THEME"|false|' \
+    "$ROOT/uninstall.sh" >"$tmp/mut/uninstall.sh"
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  uninstall_run "$tmp" "$tmp/mut/uninstall.sh" >/dev/null 2>&1 || true
+  if uninstall_assert_gone "$tmp" "$theme" 2>/dev/null; then
+    fail "negative control: omitting the theme removal still passes"
+  fi
+  # Without the boot face removal the fonts folder stays.
+  sed 's|sudo rm -rf /usr/share/fonts/omarchy-matrix|false|' \
+    "$ROOT/uninstall.sh" >"$tmp/mut/uninstall.sh"
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  uninstall_run "$tmp" "$tmp/mut/uninstall.sh" >/dev/null 2>&1 || true
+  if uninstall_assert_gone "$tmp" "$theme" 2>/dev/null; then
+    fail "negative control: omitting the boot face removal still passes"
+  fi
+  # Without the rebuild the initramfs is never rebuilt.
+  sed 's#initramfs_rebuild || {#true || {#' \
+    "$ROOT/uninstall.sh" >"$tmp/mut/uninstall.sh"
+  uninstall_setup_case "$tmp" "$theme" "other" "other"
+  uninstall_run "$tmp" "$tmp/mut/uninstall.sh" >/dev/null 2>&1 || true
+  if [[ $(uninstall_rebuilds "$tmp") == 1 ]]; then
+    fail "negative control: omitting the rebuild still passes"
   fi
 }
 
@@ -1079,6 +1347,7 @@ check_repo_hygiene
 check_early_backlight
 check_early_backlight_removal
 check_early_backlight_paths
+check_uninstall_removal
 check_keyline_guard
 check_sync_files
 check_ownership
