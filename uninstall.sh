@@ -80,13 +80,10 @@ echo "· removing the rain plugin"
 remove_plugin "$PLUGIN_ID"
 
 # Appearance > Unlock and Remove > Theme go back to Omarchy's own rows
-# (lib/derive-menu.py). An older install has no such block, and no deriver to
-# take it out.
-if [[ -x $HERE/lib/derive-menu.py ]]; then
-  echo "· handing Omarchy's menu rows back"
-  OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-menu.py" --remove >/dev/null ||
-    echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
-fi
+# (lib/derive-menu.py ships with the pack, beside this script).
+echo "· handing Omarchy's menu rows back"
+OMARCHY_MATRIX_PROVIDER="$PROVIDER" "$HERE/lib/derive-menu.py" --remove >/dev/null ||
+  echo "  could not; remove the $SLUG block from ~/.config/omarchy/extensions/omarchy-menu.jsonc" >&2
 
 # The boot layer owns the Plymouth theme and one initramfs hook. Both live
 # outside home, need a password and must go before the final rebuild.
@@ -200,7 +197,7 @@ if ((KEEP_THEME)); then
   # With the plugin gone, the rain's still would stand frozen on the desktop, so
   # Omarchy moves on to the theme's next background.
   on_rain=0
-  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) != *-live-* ]] || on_rain=1
+  if on_live_background; then on_rain=1; fi
   withdraw_live_background
   ((!on_rain)) || omarchy-theme-bg-next >/dev/null 2>&1 || true
   cat <<DONE
@@ -214,11 +211,6 @@ DONE
 fi
 
 STOCK_THEMES="${OMARCHY_PATH:-/usr/share/omarchy}/themes"
-
-theme_exists() {
-  [[ -n ${1:-} ]] || return 1
-  [[ -d "$HOME/.config/omarchy/themes/$1" || -d "$STOCK_THEMES/$1" ]]
-}
 
 # Where to land. First, the theme you were on before you picked this one: the
 # theme-set hook writes it down every time you leave this theme.
@@ -253,7 +245,7 @@ step_off_target() {
   echo "$fallback"
 }
 
-if [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null) == "$SLUG" ]]; then
+if [[ $(current_theme) == "$SLUG" ]]; then
   target=$(step_off_target)
   if [[ -n ${target:-} ]]; then
     echo "· stepping off the $SLUG theme onto $target"

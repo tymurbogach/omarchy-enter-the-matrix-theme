@@ -178,6 +178,12 @@ FONT_FILE = "fonts/CourierPrime-Bold.ttf"
 # monitor and Trinity's dialog are different screens, kept different here too.
 PANEL_FONT_FILE = "fonts/VT323-Regular.ttf"
 
+# The family prefix shared by every weight of the splash face: a weight change
+# (Regular -> Bold, or back) must not leave the old file riding along, neither
+# in the user's fonts (ensure_user_font) nor system-wide (the install below).
+# One spelling, used in both cleanups.
+FONT_FAMILY_PREFIX = Path(FONT_FILE).stem.split("-")[0]
+
 # The progress readout's characters, as one strip to crop cells out of. Baked
 # for the same reason everything else here is: at boot the font is whatever the
 # initramfs happens to hold, and digits in a face that does not match the box
@@ -1377,6 +1383,29 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
             ["magick", str(path), "-alpha", "extract", "-format", "%[fx:mean]",
              "info:"], capture_output=True, text=True, check=True).stdout)
 
+    def missing_glyphs(alphabet, face, probe_name):
+        """Characters of `alphabet` the face draws as blank, if any.
+
+        One copy of the probe both the typed lines and the panel captions go
+        through: render the whole alphabet as one strip (each face is monospace
+        by the assertion above, so one magick call covers every character in
+        use) and measure each cell's ink. Freetype draws a missing glyph as
+        blank rather than as a box, so a mean near zero means the face simply
+        has no such glyph.
+        """
+        probe = target / probe_name
+        render(alphabet, "#FFFFFF", probe, face)
+        width, height = measure(probe)
+        tile = width / len(alphabet)
+        means = subprocess.run(
+            ["magick", str(probe), "-alpha", "extract",
+             "-crop", f"{round(tile)}x{height}", "+repage",
+             "-format", "%[fx:mean] ", "info:"],
+            capture_output=True, text=True, check=True).stdout.split()
+        blank = [c for c, mean in zip(alphabet, means) if float(mean) < 0.005]
+        probe.unlink(missing_ok=True)
+        return blank
+
     # --- the typed lines, for every mode ------------------------------------
     # One picture per line per mode, all at the same point size in the same
     # face, so a single cell describes the lot. The mode is in the FILENAME
@@ -1486,17 +1515,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     # by the assertion above: one magick call for the whole alphabet in use.
     alphabet = "".join(sorted({c for lines in MODE_LINES.values()
                                for line in lines for c in line if c != " "}))
-    probe = target / ".alphabet.png"
-    render(alphabet, "#FFFFFF", probe)
-    width, height = measure(probe)
-    tile = width / len(alphabet)
-    means = subprocess.run(
-        ["magick", str(probe), "-alpha", "extract",
-         "-crop", f"{round(tile)}x{height}", "+repage",
-         "-format", "%[fx:mean] ", "info:"],
-        capture_output=True, text=True, check=True).stdout.split()
-    blank = [c for c, mean in zip(alphabet, means) if float(mean) < 0.005]
-    probe.unlink(missing_ok=True)
+    blank = missing_glyphs(alphabet, None, ".alphabet.png")
     if blank:
         die(f"{font_path} has no glyph for {' '.join(repr(c) for c in blank)}.\n"
             f"  freetype draws a missing glyph as BLANK rather than as a box, so "
@@ -1546,17 +1565,7 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
     # ...and no missing glyphs in anything the band can ever say.
     captions = (BOX_TITLE, PROGRESS_TITLE, GRANTED_TEXT, DENIED_TEXT)
     alphabet = "".join(sorted({c for cap in captions for c in cap if c != " "}))
-    probe = target / ".panel-alphabet.png"
-    render(alphabet, "#FFFFFF", probe, panel_path)
-    width, height = measure(probe)
-    tile = width / len(alphabet)
-    means = subprocess.run(
-        ["magick", str(probe), "-alpha", "extract",
-         "-crop", f"{round(tile)}x{height}", "+repage",
-         "-format", "%[fx:mean] ", "info:"],
-        capture_output=True, text=True, check=True).stdout.split()
-    blank = [c for c, mean in zip(alphabet, means) if float(mean) < 0.005]
-    probe.unlink(missing_ok=True)
+    blank = missing_glyphs(alphabet, panel_path, ".panel-alphabet.png")
     if blank:
         die(f"{panel_path} has no glyph for {' '.join(repr(c) for c in blank)}.\n"
             f"  freetype draws a missing glyph as BLANK rather than as a box, so "
@@ -2003,7 +2012,7 @@ def ensure_user_font(theme_dir):
     # of them fc-match's own default-style preference happens to favour is
     # what the desktop gets, not necessarily what FONT_FILE names now. Only
     # the current file belongs here.
-    for stale in dest_dir.glob(f"{Path(FONT_FILE).stem.split('-')[0]}-*.ttf"):
+    for stale in dest_dir.glob(f"{FONT_FAMILY_PREFIX}-*.ttf"):
         if stale != dest:
             stale.unlink()
     if not dest.is_file() or dest.read_bytes() != src.read_bytes():
@@ -2111,10 +2120,9 @@ def main():
             # Same reasoning as ensure_user_font(): a weight change must not
             # leave the old one riding along, system-wide, for every app that
             # asks fontconfig for this family to find.
-            family_prefix = Path(FONT_FILE).stem.split("-")[0]
             subprocess.run(
                 ["sudo", "find", str(SYS_FONT_DIR), "-maxdepth", "1",
-                 "-name", f"{family_prefix}-*.ttf",
+                 "-name", f"{FONT_FAMILY_PREFIX}-*.ttf",
                  "!", "-name", Path(FONT_FILE).name, "-delete"],
                 check=True)
             subprocess.run(["sudo", "cp", str(face), str(SYS_FONT_DIR) + "/"],

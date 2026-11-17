@@ -1024,6 +1024,52 @@ check_menu_names() {
   return 0
 }
 
+# --- rain atlas grid -----------------------------------------------------------
+# The grid lives once in tools/generate-atlas.py (COLS, ROWS, CW, CH).
+# tools/generate-showcase.py reads it from there instead of repeating it, and
+# the shader cannot import Python, so this checks its copy agrees.
+
+check_atlas_grid() {
+  section "rain atlas grid agrees (atlas, showcase, shader)"
+  if python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+errors = []
+def bad(message):
+    errors.append(message)
+atlas = (root / "tools/generate-atlas.py").read_text()
+m = re.search(r"^COLS,\s*ROWS\s*=\s*(\d+),\s*(\d+)", atlas, re.M)
+n = re.search(r"^CW,\s*CH\s*=\s*(\d+),\s*(\d+)", atlas, re.M)
+if not m or not n:
+    bad("tools/generate-atlas.py does not define COLS, ROWS, CW, CH")
+    cols = rows = cw = ch = None
+else:
+    cols, rows, cw, ch = int(m.group(1)), int(m.group(2)), int(n.group(1)), int(n.group(2))
+showcase = (root / "tools/generate-showcase.py").read_text()
+if "tools" not in showcase or "generate-atlas.py" not in showcase:
+    bad("tools/generate-showcase.py no longer reads its grid from generate-atlas.py")
+if re.search(r"ATLAS_CELL\s*=\s*\(\d+,\s*\d+\)", showcase):
+    bad("tools/generate-showcase.py repeats the cell size instead of reading it")
+if re.search(r"ATLAS_GRID\s*=\s*\(\d+,\s*\d+\)", showcase):
+    bad("tools/generate-showcase.py repeats the grid instead of reading it")
+frag = (root / "tools/matrix.frag").read_text()
+mc = re.search(r"ATLAS_COLS\s*=\s*([\d.]+)", frag)
+mr = re.search(r"ATLAS_ROWS\s*=\s*([\d.]+)", frag)
+if not mc or not mr:
+    bad("tools/matrix.frag does not define ATLAS_COLS/ATLAS_ROWS")
+elif cols is not None and (float(mc.group(1)) != cols or float(mr.group(1)) != rows):
+    bad(f"tools/matrix.frag grid is {mc.group(1)}x{mr.group(1)}, want {cols}x{rows}")
+for message in errors:
+    print(f"  FAIL: {message}")
+sys.exit(1 if errors else 0)
+PY
+  then
+    :
+  else
+    failures=$((failures + 1))
+  fi
+}
+
 # --- main ----------------------------------------------------------------------
 
 check_shell install.sh uninstall.sh bin/omarchy-matrix lib/pack.sh tools/preview-plymouth.sh \
@@ -1042,6 +1088,7 @@ check_sync_files
 check_ownership
 check_menu
 check_menu_names
+check_atlas_grid
 check_boot_leftovers
 
 if ((failures > 0)); then

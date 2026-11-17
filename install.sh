@@ -171,10 +171,9 @@ stage_plugin() { # <id> <absolute source dir> <file>...
   shift 2
   local dest="$PLUGINS_DIR/$id" staging="$PLUGINS_DIR/.$id.staging"
 
-  # A folder carrying a .git checkout is managed by hand -- `omarchy plugin add`
-  # clones the repo there -- and staging over it would take the checkout with
-  # it. Leave it alone.
-  if [[ -e $dest/.git ]]; then
+  # A folder carrying a .git checkout is hand-managed (lib/pack.sh): staging
+  # over it would take the checkout with it. Leave it alone.
+  if plugin_has_git_checkout "$dest"; then
     echo "  $id has a .git checkout; leaving it alone"
     return 1
   fi
@@ -300,7 +299,7 @@ prune_backups
 OMARCHY_MATRIX_RESTART=$replaced_live "$BIN_DIR/$CLI" doctor >/dev/null || problems=1
 
 in_effect=0
-[[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null) != "$SLUG" ]] || in_effect=1
+[[ $(current_theme) != "$SLUG" ]] || in_effect=1
 
 # The red pill starts on the rain. After that the background is Omarchy's: a
 # theme set starts on the rain by itself, and Appearance > Background changes it.

@@ -253,27 +253,29 @@ def same_tree(a, b):
                for name in names if (a / name).is_file())
 
 
-def enabled(plugin_id):
-    """Whether the running shell has the plugin enabled. No answer means no."""
+def _listed_plugins():
+    """What `omarchy-plugin-list --json` reports, or [] when it answers
+    nothing usable. One copy of the parse both enabled() and discovered()
+    read through."""
     try:
         listed = subprocess.run(["omarchy-plugin-list", "--json"], check=True,
                                 capture_output=True, text=True).stdout
-        return any(p.get("id") == plugin_id and p.get("enabled")
-                   for p in json.loads(listed))
+        return json.loads(listed)
     except (OSError, subprocess.CalledProcessError, ValueError):
-        return False
+        return []
+
+
+def enabled(plugin_id):
+    """Whether the running shell has the plugin enabled. No answer means no."""
+    return any(p.get("id") == plugin_id and p.get("enabled")
+               for p in _listed_plugins())
 
 
 def discovered(plugin_id):
     """Wait for Omarchy's watcher to register one atomically published clone."""
     for _ in range(40):
-        try:
-            listed = subprocess.run(["omarchy-plugin-list", "--json"], check=True,
-                                    capture_output=True, text=True).stdout
-            if any(p.get("id") == plugin_id for p in json.loads(listed)):
-                return True
-        except (OSError, subprocess.CalledProcessError, ValueError):
-            pass
+        if any(p.get("id") == plugin_id for p in _listed_plugins()):
+            return True
         # Match Omarchy's clone discovery window without forcing a rescan.
         time.sleep(0.05)
     return False

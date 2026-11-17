@@ -36,6 +36,8 @@ layout(std140, binding = 0) uniform buf {
 
 layout(binding = 1) uniform sampler2D atlas;
 
+// The rain atlas grid. Owned by tools/generate-atlas.py (COLS, ROWS); this
+// shader cannot import Python, so tools/check.sh checks the two agree.
 const float ATLAS_COLS = 8.0;
 const float ATLAS_ROWS = 7.0;
 const float GLYPHS = 50.0;

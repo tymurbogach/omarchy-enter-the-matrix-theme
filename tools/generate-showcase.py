@@ -30,8 +30,24 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "showcase"
 FONT = ROOT / "fonts" / "TerminessNerdFont-Regular.ttf"
 ATLAS = ROOT / "glyphs.png"
-ATLAS_CELL = (38, 80)  # generate-atlas.py: an 8x7 grid of 38x80 px cells
-ATLAS_GRID = (8, 7)
+
+
+def _atlas_grid():
+    """The rain atlas grid, read from tools/generate-atlas.py so the two agree.
+
+    generate-atlas.py owns the grid (an 8x7 grid of 38x80 px cells); this file
+    only cuts glyphs out of it. Loaded by path: the file name has a hyphen, so
+    it is not importable by name.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_atlas", ROOT / "tools" / "generate-atlas.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return (module.CW, module.CH), (module.COLS, module.ROWS)
+
+
+ATLAS_CELL, ATLAS_GRID = _atlas_grid()
 
 
 def hex_rgb(value):

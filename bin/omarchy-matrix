@@ -57,10 +57,6 @@ pack_set_paths
 # one: picking another theme makes the theme-set hook call `suspend`. The boot
 # splash is the exception, because Plymouth belongs to the system and not to
 # the theme.
-current_theme() {
-  cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null
-}
-
 pack_in_effect() {
   [[ $(current_theme) == "$SLUG" ]]
 }
@@ -95,10 +91,6 @@ lock_clone_enabled() {
 # With it set, Omarchy opens no screensaver, so the rain has nothing to cover.
 screensaver_flag_set() {
   [[ -f "$HOME/.local/state/omarchy/toggles/screensaver-off" ]]
-}
-
-on_live_background() {
-  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) == *-live-* ]]
 }
 
 nudge_shell() {
@@ -154,13 +146,13 @@ files_outdated() {
   local theme="$1" source target top
   while IFS='|' read -r source target; do
     [[ -f $source ]] || continue
-    # A plugin folder carrying a .git checkout is managed by hand, and
-    # install.sh leaves it alone for the same reason: judging it stale here
-    # would send --sync after a checkout nothing may overwrite.
+    # A plugin folder carrying a .git checkout is hand-managed (lib/pack.sh):
+    # judging it stale here would send --sync after a checkout nothing may
+    # overwrite.
     case "$target" in
     "$PLUGINS_DIR"/*)
       top="${target#"$PLUGINS_DIR"/}"; top="${top%%/*}"
-      [[ -e $PLUGINS_DIR/$top/.git ]] && continue
+      plugin_has_git_checkout "$PLUGINS_DIR/$top" && continue
       ;;
     esac
     [[ -f $target && ! $source -nt $target ]] || return 0
@@ -528,7 +520,7 @@ cmd_hook_theme_set() {
 # (lib/derive-menu.py). A removal from a terminal passes no menu, so the
 # theme-set hook calls it at the next theme change.
 theme_removed() {
-  [[ ! -d $HOME/.config/omarchy/themes/$SLUG && ! -d ${OMARCHY_PATH:-/usr/share/omarchy}/themes/$SLUG ]]
+  ! theme_exists "$SLUG"
 }
 
 cmd_hook_theme_remove() {

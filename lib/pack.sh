@@ -192,6 +192,35 @@ pack_version_ok() {
   ((10#$major > 4 || (10#$major == 4 && 10#$minor >= 5)))
 }
 
+# --- shared state readers ---------------------------------------------------
+# One copy of the three questions every script asks Omarchy: which theme is
+# current, whether the rain's still is the background, and whether a theme
+# folder exists anywhere. bin/omarchy-matrix, install.sh and uninstall.sh all
+# read through these, so the paths agree by construction.
+
+# The theme Omarchy names as current (empty when Omarchy names none).
+current_theme() {
+  cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null
+}
+
+# Whether the rain's still is the background (its name carries -live-).
+on_live_background() {
+  [[ $(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null) == *-live-* ]]
+}
+
+# Whether a theme folder exists in either place Omarchy keeps themes.
+theme_exists() {
+  [[ -n ${1:-} ]] || return 1
+  [[ -d "$HOME/.config/omarchy/themes/$1" || -d "${OMARCHY_PATH:-/usr/share/omarchy}/themes/$1" ]]
+}
+
+# A plugin folder carrying a .git checkout is managed by hand, and the pack
+# leaves it alone: staging over it would take the checkout with it, and
+# judging it stale would send --sync after a checkout nothing may overwrite.
+plugin_has_git_checkout() { # <plugin dir>
+  [[ -e ${1:?}/.git ]]
+}
+
 # A 1.x install that nothing migrates any more: the 1.2.x settings file and
 # widget leftovers, and the pre-rename menu block of 1.3.0. These paths are
 # the only 1.x constants the pack still names, and only here. install.sh and
