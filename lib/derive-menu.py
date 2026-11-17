@@ -53,7 +53,9 @@ USER_MENU = HOME / ".config/omarchy/extensions/omarchy-menu.jsonc"
 SLUG = PROVIDER["slug"]
 CLI = HOME / ".local/bin" / PROVIDER["cli"]
 BEGIN = f"// >>> {SLUG}: rows of Omarchy's menu, managed by {PROVIDER['cli']}. Do not edit."
-# Up to 1.2.x the block held Style > Unlock alone, under this first line.
+# 1.3.0 wrote its block under this first line as its then-current BEGIN; the
+# rename kept it as compat so direct 1.3.0 upgraders migrate. Removal belongs
+# to the F19 2.0 cut.
 OLD_BEGIN = f"// >>> {SLUG}: Style > Unlock, managed by {PROVIDER['cli']}. Do not edit."
 END = f"// <<< {SLUG}"
 

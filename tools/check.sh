@@ -744,10 +744,10 @@ PYCODE
     [[ $remove == "$want" ]] || { echo "  FAIL: remove.theme runs [$remove], want [$want]" >&2; exit 1; }
     bash -n -c "$remove" || { echo "  FAIL: remove.theme is not a command that bash can read" >&2; exit 1; }
 
-    # A block from 1.2.x, under its old first line, gives way to the new one.
+    # A block from 1.3.0, under its old first line, gives way to the new one.
     sed -i "s|^  // >>> $slug: rows of Omarchy's menu,|  // >>> $slug: Style > Unlock,|" "$menu"
     "$ROOT/lib/derive-menu.py" >/dev/null && [[ $(cat "$menu") == "$first" ]] ||
-      { echo "  FAIL: a block from 1.2.x did not give way to the new one" >&2; exit 1; }
+      { echo "  FAIL: a block from 1.3.0 did not give way to the new one" >&2; exit 1; }
 
     printf '#!/bin/bash\necho "$CHOICE"\n' >"$tmp/fake/omarchy-plymouth-switcher"
     printf '#!/bin/bash\nprintf "%%s" "$*" >"$OUT"\n' >"$tmp/fake/omarchy-launch-floating-terminal-with-presentation"
@@ -1001,13 +1001,45 @@ check_boot_leftovers() {
   [[ ! -s $tmp/notify.log ]] || fail "post-update notifies without leftovers"
 }
 
+# --- keyline guard ------------------------------------------------------------
+# The install overlays, it never wipes: a `keyline.png` from before the
+# placeholder row was dropped must still go from the installed theme, or it
+# rides along in every initramfs. The staged theme never carries it (fresh
+# mkdtemp), so no staging-time unlink may come back either.
+
+check_keyline_guard() {
+  section "installed keyline.png is still removed"
+  if python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+errors = []
+def bad(message):
+    errors.append(message)
+plymouth = (root / "lib/derive-plymouth.py").read_text()
+if not re.search(
+        r'\["sudo",\s*"rm",\s*"-f",\s*str\(TARGET / "keyline\.png"\)',
+        plymouth):
+    bad("derive-plymouth.py no longer removes the installed keyline.png")
+if '(target / "keyline.png").unlink' in plymouth:
+    bad("derive-plymouth.py unlinks keyline.png from the fresh staging dir again")
+for message in errors:
+    print(f"  FAIL: {message}")
+sys.exit(1 if errors else 0)
+PY
+  then
+    :
+  else
+    failures=$((failures + 1))
+  fi
+}
+
 # --- menu names ---------------------------------------------------------------
 # Omarchy 4.5 renamed the Style group to Appearance (rows appearance.theme,
 # appearance.background and appearance.unlock; Remove is remove.theme, on its
 # own). No user-facing string may still name the old group. The old name
-# survives in exactly three lines: the 1.2.x block marker in
-# lib/derive-menu.py (OLD_BEGIN, with the history comment above it) and the
-# migration fixture in check_menu that rewrites that marker before it derives.
+# survives in exactly two lines: the 1.3.0 block marker kept as compat in
+# lib/derive-menu.py (OLD_BEGIN) and the migration fixture in check_menu that
+# rewrites that marker before it derives.
 # The two grep needles are built from a prefix so that this file holds no
 # literal of its own for the check to trip over.
 
@@ -1021,7 +1053,6 @@ check_menu_names() {
   fi
   rest=$(printf '%s\n' "$hits" \
     | grep -v -e '^lib/derive-menu.py:.*OLD_BEGIN' \
-               -e '^lib/derive-menu.py:.*Up to 1\.2\.x' \
                -e "^tools/check.sh:.*rows of Omarchy's menu," || true)
   if [[ -n ${rest//[[:space:]]/} ]]; then
     printf '%s\n' "$rest" >&2
@@ -1043,6 +1074,7 @@ check_repo_hygiene
 check_early_backlight
 check_early_backlight_removal
 check_early_backlight_paths
+check_keyline_guard
 check_sync_files
 check_ownership
 check_menu

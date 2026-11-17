@@ -1644,11 +1644,6 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
                 f"as typed characters, which is the\n  one thing this design "
                 f"exists to avoid. Shrink the dash.")
 
-    # The placeholder row is gone -- the dialog shows nothing until the first
-    # keystroke -- so a `keyline.png` left behind by an older derive must not
-    # linger in the staged theme (stage() overlays, it never wipes).
-    (target / "keyline.png").unlink(missing_ok=True)
-
     # --- the panel ----------------------------------------------------------
     interior = BOX_CELLS * pitch
     pad = pitch                     # a cell of air either side of the content
