@@ -181,17 +181,25 @@ def brand(w=1108, h=523):
 
 
 def preview_unlock(w=1920, h=1080):
-    """The splash as it looks: the typed line over the passphrase panel."""
+    """The splash as it looks: the typed line over the passphrase panel.
+
+    The composition is scaled to 0.78 about the canvas centre: the picker's
+    thumbnail centre-crops to a taller cell and the QML cell crops the
+    sides further, so edge-to-edge content does not survive there."""
     line_w = 15 / 21 * 0.32 * w       # this line's share of the typed width
     size = line_w / (15 * 0.6028)     # Courier Prime Bold is a 0.6 face
     panel_w = 0.30 * w
     panel_h = 483 / 1346 * panel_w
+    zoom = 0.78
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">
   <defs>{halo_defs(size)}</defs>
   <rect width="{w}" height="{h}" fill="{BG}"/>
+  <g transform="translate({w / 2},{h / 2}) scale({zoom})
+                translate({-w / 2},{-h / 2})">
   {typed_line(f"{0.055 * w:.1f}", f"{0.085 * h + 0.572 * size:.1f}",
               round(size, 1), anchor="start")}
   {panel((w - panel_w) / 2, 0.684 * h, panel_w)}
+  </g>
 </svg>'''
 
 
