@@ -48,7 +48,7 @@ Item {
   //
   // Up to 1.2.0 the pack switched Omarchy's screensaver off and ran an idle
   // monitor of its own. A third-party service gets a scoped shell
-  // (shell.qml:739-744) that cannot see Stay Awake, the timings or the lock.
+  // (built in `shell.qml`) that cannot see Stay Awake, the timings or the lock.
   // That monitor never started, and no screensaver came up at all.
   readonly property string screensaverAppId: "org.omarchy.screensaver"
   readonly property bool screensaverOpen: {

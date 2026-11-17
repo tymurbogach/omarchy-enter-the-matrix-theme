@@ -42,9 +42,9 @@ that door.
 
 `lib/derive-plymouth.py` starts from your machine's `omarchy.script` and turns
 it into Neo's monitor. Upper left, one line at a time, the screen clearing
-between them, in the theme's own `green` -- taken from colors.toml rather than
-repeated in provider.json, so the pack has one green rather than two that drift
-apart:
+between them, in the provider's `color` from provider.json -- a pale core with
+a saturated glow (`glowColor`); omit both and the lines fall back to the
+theme's own `green` from colors.toml:
 
 ```
 Wake up, Neo...
@@ -206,8 +206,9 @@ Details that explain the design, each of them forced by something:
 - **The colours are measured, not chosen.** The panel's ice blue was sampled off
   the frames themselves. The first guess was a mint green-cyan, and beside the
   real thing it was obviously the wrong colour: what matters is that blue sits
-  above green. The lines are not sampled at all -- they take the theme's own
-  accent, which is one fewer hex to keep in step. The shader's phosphor
+  above green. The lines are not sampled at all -- they take the provider's
+  `color` from provider.json, falling back to the theme's own accent when
+  `color` and `glowColor` are omitted. The shader's phosphor
   `#00FF41` was what they used first, and at this size on black it reads as
   glare rather than as a monitor.
 - **The CRT material has three layers.** The typed line keeps a pale green
@@ -246,13 +247,13 @@ hiding `label-pango` and every font but the three the initramfs would have.
 |---|---|
 | `colors.toml` | The palette. Semantic, not `color0..15`. Includes the Hyprland border colours, which go through the template. |
 | `shell.{bar,menu,launcher,notifications}.toml` | Shell section overrides: they give the bar and the cards some relief, which otherwise all paint the same black. |
-| `backgrounds/` | The carousel. `00-pills-hands.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: five frames from the film, six stylised. |
+| `backgrounds/` | The carousel. `00-pills-hands.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: film frames and stylised rain. |
 | `live/` | The rain's still, `0-live-rain.png`: thumbnail, marker and fallback in one. It is not in the carousel, so the theme alone never offers it. The pack links it into Omarchy's folder for your own backgrounds of this theme, which Omarchy lists first, so a theme set starts on the rain. The plugin finds it by the `-live-` in its name. |
 | `unlock.png`, `preview-unlock.png` | The static boot mark: what Omarchy's own Appearance › Unlock installs for this theme, and its card there. With the pack, the same card installs the animation instead, where `logo.png` goes invisible and the lines are typed. |
 | `manifest.json`, `Service.qml`, `MatrixRain.qml`, `matrix.frag.qsb`, `glyphs.png` | The plugin. |
-| `provider.json` | The only file that names this provider — slug, plugin ids, Plymouth theme, the lines typed at boot. Everything else is machinery. |
+| `provider.json` | The only file that names this provider — slug, plugin ids, Plymouth theme and colours, the lines typed at boot. Everything else is machinery. |
 | `bin/` | `omarchy-matrix`, the one command on PATH (a link to the share dir). |
-| `lib/` | The shared shell (`pack.sh`), the two derivers and `provider.py` — the machinery the CLI, `install.sh` and `uninstall.sh` run from the share dir. |
+| `lib/` | The shared shell (`pack.sh`), the three derivers (plymouth, menu, lock) and `provider.py` — the machinery the CLI, `install.sh` and `uninstall.sh` run from the share dir. |
 | `tools/` | Dev tools, never installed: `preview-plymouth.sh`, `capture-showcase.sh` and `generate-showcase.py` (the pictures in `docs/showcase/` and `preview.png`), `generate-brand.py` (only `unlock.png` and `preview-unlock.png`), `generate-backgrounds.py`, `generate-atlas.py` and the `matrix.frag` shader source. |
 | `fonts/` | The face the boot splash is drawn in, shipped as a file rather than named as a dependency. See `fonts/README.md`. |
 

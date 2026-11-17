@@ -180,10 +180,10 @@ def stage_clone(target, plugin_id, rain):
 
     Writing into the live folder was the seam this closes. Saving ANY file under
     ~/.config/omarchy/plugins/ wakes Omarchy's watcher -- an `inotifywait -m -r`
-    on that directory (PluginRegistry.qml:636) -- so copying six files in fired
+    on that directory (Omarchy's `localPluginWatcher` in `PluginRegistry.qml`) -- so copying six files in fired
     six events, and `rm -rf` on the way out would fire one per file again. A
     dot-prefixed name is skipped by the scanner on purpose
-    (localPluginIdForPath, PluginRegistry.qml:707), so everything below is
+    (`localPluginIdForPath` in `PluginRegistry.qml`), so everything below is
     invisible until the two renames at the end. install.sh stages its own
     plugins the same way; this is the lock catching up.
 

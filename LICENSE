@@ -2,8 +2,8 @@ MIT License
 
 Copyright (c) 2026 tymurbogach
 
-El shader lluvia/matrix.frag deriva de matrix.frag de bjarneo/quickshell,
-Copyright (c) bjarneo, tambien bajo MIT.
+The shader tools/matrix.frag derives from matrix.frag by bjarneo/quickshell,
+Copyright (c) bjarneo, also under MIT.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

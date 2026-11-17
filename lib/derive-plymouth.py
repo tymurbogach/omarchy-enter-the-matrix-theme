@@ -92,9 +92,11 @@ MODE_LINES = {"boot": BOOT_LINES, **(PROVIDER["plymouth"].get("modes") or {})}
 # the tail must never resize what was already settled by looking at it.
 PRE_COUNT = len(LINES)
 
-# The typed lines take the THEME's `green` -- its accent, out of colors.toml at
-# derive time. Repeating the hex in provider.json would work today and drift the
-# first time the palette moved.
+# The typed lines take the PROVIDER's `color` -- out of provider.json, with the
+# theme's `green` accent from colors.toml as the fallback when both `color` and
+# `glowColor` are omitted. The fallback keeps one green rather than two that
+# drift apart; the override exists because the theme's green is deliberately
+# yellow-leaning and reads as swamp next to the film's stills.
 #
 # Not the phosphor #00FF41 the shader's heads use: on a black screen, at the
 # size these lines are drawn, that reads as glare rather than as a monitor. And
@@ -432,7 +434,7 @@ KEY_CELLS = 21              # passphrase slots, at most. 21 on purpose: it
                             # is exactly the progress row's own width (16
                             # track blocks + a gap + 4 digits), so both rows
                             # fill the panel the same way -- and it is ODD,
-                            # so one typed circle lands on the exact centre.
+                            # so one typed dash lands on the exact centre.
 PROMPT_WIDTH = 0.27          # sizes the CAPS LOCK label; the disk's own prompt
                             # this was named for is no longer drawn. Nine
                             # tenths of the box below, so the label belongs to
@@ -470,7 +472,7 @@ BOX_CELLS = 26              # interior width, in cells: 25 of content and air
 # `░` is a dither pattern and `█` is solid ink, which made 0% and 50% look like
 # two unrelated widgets.
 #
-# 16, not 20: kerning (added when the mask became a drawn circle) widens
+# 16, not 20: kerning (added when the mask became drawn) widens
 # every cell on this grid, and this row -- BAR_CELLS+BAR_GAP_CELLS+PCT_CELLS
 # -- only had ONE cell of slack against BOX_CELLS to absorb that in. It did
 # not: photographed on real hardware, "27%" ran past the panel's own right
@@ -1758,8 +1760,8 @@ def splash_assets(target, font_path, line_hex, panel_path, glow_hex=None):
         bottom, right = box_h - stroke, box_w - stroke
         subprocess.run([
             "magick", "-size", f"{box_w}x{box_h}", "xc:none",
-            # The band, filled, full width, top edge to the divider. Its own
-            # tone, not the frame's -- see BAND_FILL_HEX.
+            # The band, filled, full width, top edge to the divider. The same
+            # tone as the frame -- see BAND_FILL_HEX.
             "-fill", f"#{BAND_FILL_HEX}", "-stroke", "none",
             "-draw", f"rectangle {stroke},{stroke} {right},{band_bottom}",
             # The frame: one rectangle for the whole panel, plus the divider
@@ -2049,6 +2051,8 @@ def main():
             f"{SLUG} theme.\n"
             f"  Reinstall it, or take the piece back with: {CLI} boot off")
 
+    # `background` is read but unused: the boot keeps its own black
+    # (BOOT_BACKGROUND_HEX), independent of the desktop's softer background.
     colours = (theme_colour("background", theme_dir),
                theme_colour("foreground", theme_dir),
                theme_colour("green", theme_dir),

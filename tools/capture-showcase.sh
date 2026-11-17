@@ -222,7 +222,7 @@ scenario() { # <shot name> <seconds>
   echo "$WORK/$1.sh"
 }
 
-# The boot lines type for about 22 s (derive-plymouth.py prints the time), and
+# The boot lines type for about 19 s (derive-plymouth.py prints the time), and
 # each line replaces the one before it. A burst over the whole run lets the
 # picture be chosen afterwards, with the cursor half way through a line.
 scene_typing() {

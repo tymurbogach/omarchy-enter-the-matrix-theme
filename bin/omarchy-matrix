@@ -27,8 +27,11 @@ fail() {
 
 # --- the provider -----------------------------------------------------------
 # The pack is machinery plus one provider, and provider.json is the only file
-# that names the provider. lib/provider.py resolves it the same way for the two
-# derivers: keep the two in step.
+# that names the provider. lib/provider.py resolves it for the three derivers
+# (plymouth, menu, lock): $OMARCHY_MATRIX_PROVIDER first, then the installed
+# share copy, then the repo copy next to lib/. The CLI below resolves its own
+# root the bash way instead -- $OMARCHY_MATRIX_PROVIDER, then provider.json
+# beside bin/ -- so keep both orders in step.
 #
 # The CLI finds its own root by resolving itself: installed, it is a symlink
 # into the share dir's bin/, and in a working copy it sits in the repo's bin/.

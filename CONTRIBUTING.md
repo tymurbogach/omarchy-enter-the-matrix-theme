@@ -126,14 +126,14 @@ to any bar widget.
 **For a `bar-widget`, "enabled" means "present in `bar.layout`".**
 `PluginRegistry.setEnabled` inserts the layout entry when you enable the
 plugin. It removes the entry when you disable the plugin
-(`PluginRegistry.qml:498-520`), and `isEnabled` answers from the entry.
+(`PluginRegistry.setEnabled`), and `isEnabled` answers from the entry.
 
 So a plugin that is a widget and also something else cannot switch off without
 the loss of its bar icon. That is why the rain and the old switchboard were two
 plugins.
 
 **A bar widget with no `implicitWidth` paints nothing, and nothing warns you.**
-The bar sizes each slot from `activeItem.implicitWidth` (`Bar.qml:1565`). A
+The bar sizes each slot from `activeItem.implicitWidth` (in `Bar.qml`). A
 plain `Item` has no implicit width, so every bar widget sets
 `implicitWidth: button.implicitWidth` on its root.
 
@@ -185,7 +185,7 @@ registry that the teardown has already freed.
 
 The crash is a `__dynamic_cast` on a dead `EngineGenerationExt`
 (`ipchandler.cpp:318`). It comes from `Process::onFinished` (the scanner
-exits), through the `createObject` call at `shell.qml:300`.
+exits), through the `createObject` call in `shell.qml` (the scanner's `onFinished` handler).
 
 This is
 [quickshell#972](https://github.com/quickshell-mirror/quickshell/issues/972),
@@ -208,8 +208,8 @@ segfault during teardown can do different damage on a different day.
 
 The cheap way to keep the window shut: **never write into a live plugin
 folder.** Omarchy watches `~/.config/omarchy/plugins` with `inotifywait -m -r`
-(`PluginRegistry.qml:636`). It ignores entries whose names start with a dot
-(`localPluginIdForPath`, `:707`).
+(its `localPluginWatcher` in `PluginRegistry.qml`). It ignores entries whose names start with a dot
+(`localPluginIdForPath`).
 
 So stage the plugin in `.<id>.staging` and rename it into place: Omarchy sees
 nothing until the folder is complete. `rm -rf` on the live folder causes the
@@ -291,7 +291,7 @@ new mtime, and that is the event that this comparison is for.
   does not exist until the user adds one, or until the pack links the rain
   there.
 
-`omarchy-theme-set:78` searches both. If you check "did my new backgrounds
+`omarchy-theme-set` searches both. If you check "did my new backgrounds
 arrive?" against the second path, you get a failure that is not real.
 
 **A theme set starts on the first background, and the user's folder sorts
@@ -311,11 +311,11 @@ folder, together with the user's own backgrounds in it.
 
 **A theme installed from git may not ship a `.lua` file.** It also may not ship
 `alacritty.toml`, `foot.ini`, `ghostty.conf`, `kitty.conf` or `vscode.json`
-(`omarchy-theme-set:142`). Lua runs code inside the compositor, so this theme
+(`omarchy-theme-set`'s denied list). Lua runs code inside the compositor, so this theme
 sets the border colours but not the thickness or the rounding.
 
 **To override a menu row, repeat `icon` and `label`.** `normalizeItem`
-(`MenuModel.js:13`) fills in every key before `mergeMenuSources` merges, with
+(in `MenuModel.js`) fills in every key before `mergeMenuSources` merges, with
 `icon: value.icon || ""` and `label: value.label || id`. A row that carries
 only `action` replaces the good icon and label with blanks. The comment in the
 extensions file says otherwise, and it is wrong.
@@ -335,7 +335,7 @@ not, the deriver takes its block out, Omarchy's own row comes back, and the
 Omarchy loads exactly one extension file, so the replacement is a marked block
 in the user's file. Three rules keep that file readable:
 
-- `stripJsonc` (`MenuModel.js:1`) removes only whole-line `//` comments, so the
+- `stripJsonc` (in `MenuModel.js`) removes only whole-line `//` comments, so the
   block uses whole-line comments only.
 - The block goes right after the opening brace, and its row ends with a comma.
   Omarchy allows a trailing comma, so no line of the user's changes.
@@ -394,7 +394,7 @@ answered, and the patched QML on disk was correct.
 
 **`omarchy plugin remove` renames the folder. It does not delete it.** The
 folder comes back as `.<id>.bak.<timestamp>`. If the folder contains a `.git`,
-the command deletes it (`omarchy-plugin-remove:113`).
+the command deletes it outright (the `.git` branch of `omarchy-plugin-remove`).
 
 Our lock clone has no `.git` and is derived, so every `lock off` used to leave
 a full copy behind. Nine copies had piled up here.
@@ -406,11 +406,11 @@ has the same name shape, and it must survive.
 
 **A third-party service cannot see Stay Awake, the idle timings or the lock.**
 A plain `service` plugin does not get the shell. It gets a scoped
-`PluginShellApi` (`shell.qml:739-744`), and that API has no `shellConfig`.
+`PluginShellApi` (built in `shell.qml`), and that API has no `shellConfig`.
 
 Its `firstPartyServiceFor()` returns `null` unless the plugin is a bar or an
-Indicators clone (`shell.qml:592-621`). The lock is never reachable, because
-the shell keeps it in `AuthServiceStore` (`shell.qml:933-937`).
+Indicators clone (in `shell.firstPartyServiceFor`). The lock is never reachable, because
+the shell keeps it in `AuthServiceStore` (in `shell.qml`).
 
 Up to 1.2.0, the screensaver had an idle monitor of its own, gated on those
 lookups. Each lookup failed, and a failure meant "not allowed", so the monitor
@@ -531,7 +531,7 @@ picture.
 
 **plymouthd crashes (SEGFAULT) when it can resolve no font at all.** Nothing
 checks that `FT_New_Face` found a file. For that reason, `derive-plymouth.py`
-asserts that the family resolves. The preview also fills
+falls back to `monospace` unless the family resolves. The preview also fills
 `/usr/share/fonts/Plymouth*.ttf`, and does not only hide `fc-match`.
 
 **A number and a sprite object cannot share a name in a Plymouth script.** An
@@ -561,7 +561,7 @@ blocks.
 
 A boot went `solid bar` (typing) -> `[░░░░] 0%` -> `[███░] 42%`. The eye read
 all three as one meter that behaved oddly. The glyph separates the two, not
-the space: dots for the passphrase, blocks for the track.
+the space: dashes for the passphrase, blocks for the track.
 
 `░` beside `█` is a second version of the same mistake. One is a dither
 pattern and the other is solid ink, so an empty bar and a half-full bar do not
@@ -603,7 +603,7 @@ against this glyph first, on the theory that bigger and bolder would
 eventually look round. It does not: a dilated blocky octagon is a bigger
 blocky octagon.
 
-The passphrase mask now uses ImageMagick's own `circle` primitive, one per
+The passphrase mask now uses ImageMagick's own `rectangle` primitive, one dash per
 cell, and it is not typeset at all. It is the one piece of text that stopped
 being text. No glyph in the shipped font could give the requested shape.
 
@@ -668,7 +668,7 @@ The picture showed a splash that no boot ever shows. It passed as real until
 somebody remembered the ACCESS GRANTED box from a real boot.
 
 `tools/capture-showcase.sh` now plays the real order once the lines are typed:
-the dots, then `mx_normal_callback` (ACCESS GRANTED for `GRANTED_HOLD`
+the dashes, then `mx_normal_callback` (ACCESS GRANTED for `GRANTED_HOLD`
 frames), then the track in its own box. It takes a burst, and you pick the
 frames afterwards.
 
@@ -817,7 +817,7 @@ release.
      rain must cover Omarchy's screensaver. Once per release, also wait out
      `idle.screensaver` without input, with Stay Awake off.
    - Boot splash: use `tools/preview-plymouth.sh`. Photograph the typed line,
-     the passphrase dialog with some dots in it, and the progress track at
+     the passphrase dialog with some dashes in it, and the progress track at
      0 %, part way and full. No scenario alone reaches the dots or the track:
      see the trap about the doctored stage. The two exit splashes are
      `--mode shutdown` and `--mode reboot`, and they need no reboot either.

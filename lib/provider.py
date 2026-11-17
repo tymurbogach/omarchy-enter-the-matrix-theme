@@ -2,8 +2,9 @@
 """Where the derivers get the provider's names from.
 
 The pack is machinery plus one provider, and provider.json is the only file
-that names the provider. The bash side resolves it the same way, in
-`omarchy-matrix`: keep the two in step.
+that names the provider. The CLI resolves its own root the bash way instead --
+$OMARCHY_MATRIX_PROVIDER, then provider.json beside bin/ -- so keep both
+orders in step.
 
 Resolution order, and why:
 

@@ -160,7 +160,7 @@ fi
 # hot-reloads that plugin, so the old way fired one reload per file -- eleven in
 # under a second, which is the two-instances trap idling (see CONTRIBUTING.md). A
 # dot-prefixed name is skipped by the plugin scanner on purpose: Omarchy uses
-# the same idiom for its own clone staging (PluginRegistry.qml:707).
+# the same idiom for its own clone staging (`localPluginIdForPath` in PluginRegistry.qml).
 #
 # Returns 0 when it put a folder in place, and 1 when the live folder already
 # held exactly these files. A reinstall of the same version then reloads
