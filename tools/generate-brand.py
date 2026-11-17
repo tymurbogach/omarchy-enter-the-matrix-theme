@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the matrix theme's three identity PNGs.
+"""Generate the matrix theme's two boot identity PNGs.
 
     ./tools/generate-brand.py
 
@@ -8,17 +8,13 @@
                         out and the cursor: no film logo, no wordmark.
                         Atmosphere, not branding.
   · preview-unlock.png  how that splash looks, for Plymouth's own picker.
-  · preview.png         the theme card for the `omarchy theme` carousel: the
-                        rain background with a terminal window and the palette
-                        below it.
 
-Needs rsvg-convert and ImageMagick, plus the rain's background (provider.json's
-liveBackground), which is committed rather than generated --
-generate-backgrounds.py has not produced it since the live background stopped
-being a fresh render.
+The theme card `preview.png` is not made here: `generate-showcase.py` composes
+it from real screenshots, so this script must never write it.
+
+Needs rsvg-convert and ImageMagick.
 """
 
-import json
 import os
 import random
 import subprocess
@@ -37,27 +33,6 @@ FG = "#B8ECC6"
 BRIGHT = "#DFFFE9"
 DARK_FG = "#3A6B4A"
 ACCENT = "#00FF41"
-
-PALETTE = [
-    ("bg", "#020A04"), ("red", "#E5484D"), ("green", "#00FF41"),
-    ("yellow", "#B8E65C"), ("blue", "#5B8CA8"), ("magenta", "#35D68F"),
-    ("cyan", "#8AF5C8"), ("fg", "#B8ECC6"),
-    ("muted", "#203A27"), ("red+", "#E0605F"), ("green+", "#6BFF92"),
-    ("yellow+", "#E2FF8F"), ("blue+", "#6B9AB5"), ("magenta+", "#66F0B4"),
-    ("cyan+", "#B8FFE8"), ("fg+", "#DFFFE9"),
-]
-
-
-# The snippet shown in the terminal window of the preview card. It exists to
-# show every ANSI slot at once on a realistic line of code, which is the whole
-# argument for this palette.
-CODE = [
-    [("def ", "#5B8CA8"), ("wake_up", "#00FF41"), ("(", FG), ("subject", "#B8E65C"),
-     (", ", FG), ("pill", "#B8E65C"), ("=", FG), ('"red"', "#8AF5C8"), ("):", FG)],
-    [("    ", FG), ("if", "#5B8CA8"), (" pill ", FG), ("==", FG), (' "blue"', "#8AF5C8"), (":", FG)],
-    [("        raise ", "#5B8CA8"), ("StillAsleep", "#E0605F"), ("(subject)", FG)],
-    [("    ", FG), ("return", "#5B8CA8"), (" subject.", FG), ("unplug", "#35D68F"), ("()", FG)],
-]
 
 
 def render(svg, width, height, output):
@@ -165,58 +140,6 @@ def preview_unlock(w=1920, h=1080):
 </svg>'''
 
 
-def preview(w=1800, h=1012):
-    """The carousel card: the terminal window over the rain."""
-    vw, vh = 1120, 404
-    vx, vy = (w - vw) / 2, 150
-    # One <text> per line with the tspans chained and given no x of their own:
-    # letting them flow is the only thing that respects the font's real advance.
-    # Working out each tspan's x by eye left the operators out of line.
-    rows = []
-    y = vy + 122
-    for code_line in CODE:
-        tspans = "".join(
-            '<tspan fill="%s">%s</tspan>' % (
-                colour, txt.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-            for txt, colour in code_line)
-        rows.append(f'<text x="{vx + 44}" y="{y}" font-family="{MONO}" font-size="27" '
-                    f'xml:space="preserve">{tspans}</text>')
-        y += 46
-    # A panel under the palette: without it the labels land on the rain and
-    # cannot be read.
-    sw, gap = 92, 12
-    total = len(PALETTE) * sw + (len(PALETTE) - 1) * gap
-    sx = (w - total) / 2
-    py = 700
-    swatches = [f'<rect x="{sx - 34}" y="{py - 30}" width="{total + 68}" height="150" rx="10" '
-                f'fill="{BG}" opacity="0.93"/>']
-    for i, (name, colour) in enumerate(PALETTE):
-        x = sx + i * (sw + gap)
-        swatches.append(
-            f'<rect x="{x}" y="{py}" width="{sw}" height="54" rx="3" fill="{colour}" '
-            f'stroke="{FG}" stroke-opacity="0.18"/>'
-            f'<text x="{x + sw/2}" y="{py + 82}" text-anchor="middle" font-family="{MONO}" '
-            f'font-size="17" fill="{DARK_FG}">{name}</text>')
-    prompt = (f'<tspan fill="{ACCENT}">~</tspan><tspan fill="{DARK_FG}"> on </tspan>'
-              f'<tspan fill="{BRIGHT}">main</tspan><tspan fill="{ACCENT}"> ❯ </tspan>')
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">
-  <rect width="{w}" height="{h}" fill="{BG}" opacity="0.62"/>
-
-  <rect width="{w}" height="46" fill="{BAR}"/>
-  <text x="26" y="30" font-family="{MONO}" font-size="20" fill="{FG}">1 2 3</text>
-  <text x="{w/2}" y="30" text-anchor="middle" font-family="{MONO}" font-size="20" fill="{FG}">matrix</text>
-  <text x="{w - 26}" y="30" text-anchor="end" font-family="{MONO}" font-size="20" fill="{FG}">23:58</text>
-
-  <rect x="{vx - 2}" y="{vy - 2}" width="{vw + 4}" height="{vh + 4}" rx="10" fill="{ACCENT}"/>
-  <rect x="{vx}" y="{vy}" width="{vw}" height="{vh}" rx="8" fill="{ELEVATED}"/>
-  <text x="{vx + 44}" y="{vy + 62}" font-family="{MONO}" font-size="27" xml:space="preserve">{prompt}<tspan fill="{FG}">bat wake_up.py</tspan></text>
-  {"".join(rows)}
-  <text x="{vx + 44}" y="{vy + 356}" font-family="{MONO}" font-size="27" xml:space="preserve">{prompt}<tspan fill="{BRIGHT}">▊</tspan></text>
-
-  {"".join(swatches)}
-</svg>'''
-
-
 def main():
     unlock = os.path.join(ROOT, "unlock.png")
     render(brand(), 1108, 523, unlock)
@@ -226,27 +149,6 @@ def main():
     render(preview_unlock(), 1920, 1080, pu)
     subprocess.run(["magick", pu, "-strip", "-dither", "None", "-colors", "256", pu], check=True)
     print(f"  preview-unlock.png  {os.path.getsize(pu) // 1024} KB")
-
-    with open(os.path.join(ROOT, "provider.json"), encoding="utf-8") as fh:
-        background = os.path.join(ROOT, json.load(fh)["liveBackground"])
-    if not os.path.exists(background):
-        print(f"  ! {background} not found. That file is committed, not "
-              "generated: restore it from git rather than regenerating it.",
-              file=sys.stderr)
-        return 1
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
-        overlay = fh.name
-    p = os.path.join(ROOT, "preview.png")
-    try:
-        render(preview(), 1800, 1012, overlay)
-        subprocess.run(
-            ["magick", background, "-resize", "1800x1012^", "-gravity", "center",
-              "-extent", "1800x1012", overlay, "-composite",
-              "-strip", "-dither", "None", "-colors", "256",
-              "-define", "png:compression-level=9", p], check=True)
-    finally:
-        os.remove(overlay)
-    print(f"  preview.png  {os.path.getsize(p) // 1024} KB")
 
 
 if __name__ == "__main__":

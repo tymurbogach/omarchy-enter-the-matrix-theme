@@ -253,7 +253,7 @@ hiding `label-pango` and every font but the three the initramfs would have.
 | `provider.json` | The only file that names this provider — slug, plugin ids, Plymouth theme, the lines typed at boot. Everything else is machinery. |
 | `bin/` | `omarchy-matrix`, the one command on PATH (a link to the share dir). |
 | `lib/` | The shared shell (`pack.sh`), the two derivers and `provider.py` — the machinery the CLI, `install.sh` and `uninstall.sh` run from the share dir. |
-| `tools/` | Dev tools, never installed: `preview-plymouth.sh`, `capture-showcase.sh` and `generate-showcase.py` (the pictures in `docs/showcase/` and `preview.png`), `generate-brand.py`, `generate-backgrounds.py`, `generate-atlas.py` and the `matrix.frag` shader source. |
+| `tools/` | Dev tools, never installed: `preview-plymouth.sh`, `capture-showcase.sh` and `generate-showcase.py` (the pictures in `docs/showcase/` and `preview.png`), `generate-brand.py` (only `unlock.png` and `preview-unlock.png`), `generate-backgrounds.py`, `generate-atlas.py` and the `matrix.frag` shader source. |
 | `fonts/` | The face the boot splash is drawn in, shipped as a file rather than named as a dependency. See `fonts/README.md`. |
 
 ### No switches
@@ -338,7 +338,7 @@ here, rather than pretending the hex came off a frame.
 ### Regenerating
 
 ```bash
-./tools/generate-brand.py                # unlock, preview-unlock and preview
+./tools/generate-brand.py                # unlock and preview-unlock only (never preview)
 ./tools/generate-atlas.py               # the shader's glyph atlas
 ./tools/generate-backgrounds.py --out /tmp/x.png --seed 42 --density 0.55
 

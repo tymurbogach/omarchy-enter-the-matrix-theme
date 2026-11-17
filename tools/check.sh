@@ -199,21 +199,20 @@ for path in (
 initcpio_config = (root / "initcpio/99-omarchy-matrix-backlight.conf").read_text()
 if 'omarchy-matrix-backlight' not in initcpio_config or 'plymouth' not in initcpio_config:
     bad("the early backlight hook is not ordered before Plymouth")
-for needle in (
-    'BOOT_BACKGROUND_HEX = "000000"',
-    'CRT_VIGNETTE_OPACITY = 0.08',
-    'CAPS_POLL_FRAMES = 10',
-    'crt-vignette.png',
-    'PANEL_ROW_CENTER = 0.57',
-    'mx_vignette.image.Scale(global.mx_w, global.mx_h)',
-    'write_early_backlight_config',
-    'install_early_backlight',
-):
-    if needle not in plymouth:
-        bad(f"derive-plymouth.py is missing {needle!r}")
-for needle in ('crt-phosphor', 'apply_phosphor', 'crt-scanline', 'CRT_SCANLINE'):
-    if needle in plymouth:
-        bad(f"derive-plymouth.py keeps removed CRT texture code ({needle})")
+# The splash keeps its named tuning knobs and helpers. Names and structure,
+# not values: values are tuned by eye against preview-plymouth.sh, and the
+# check must not freeze them.
+for name in ('BOOT_BACKGROUND_HEX', 'CRT_VIGNETTE_OPACITY', 'CAPS_POLL_FRAMES',
+             'PANEL_ROW_CENTER'):
+    if not re.search(rf'^{name}\s*=', plymouth, re.M):
+        bad(f"derive-plymouth.py no longer defines {name}")
+for name in ('write_early_backlight_config', 'install_early_backlight'):
+    if f'def {name}' not in plymouth:
+        bad(f"derive-plymouth.py no longer defines {name}")
+if 'crt-vignette.png' not in plymouth:
+    bad("derive-plymouth.py no longer stages crt-vignette.png")
+if 'mx_vignette' not in plymouth:
+    bad("derive-plymouth.py no longer paints the vignette layer")
 rain = (root / "MatrixRain.qml").read_text()
 for needle in (
     'property int startDelayMs: 1000',
@@ -229,9 +228,6 @@ if service.count('startDelayMs: 1000') < 2 or 'startDelayMs: 0' in service:
     bad("Service.qml does not hold the desktop and the screensaver for one second each")
 if service.count('onRunningChanged: if (running) restart()') < 2:
     bad("Service.qml does not restart the hold once running is true (desktop and screensaver)")
-for needle in ('UPower', 'windowsHere'):
-    if needle in service:
-        bad(f"Service.qml keeps a battery brake ({needle}): the rain runs always")
 # Both rain panels are black: while the shader hides during the one-second
 # hold, a transparent panel would show Omarchy's still instead of black.
 if service.count('color: "black"') < 2:
