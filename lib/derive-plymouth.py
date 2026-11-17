@@ -213,79 +213,11 @@ GAP_PAUSE = 45              # cleared screen, before the next line
 # whole animation could stand to feel snappier throughout, boot included --
 # there is no hard deadline here, just a faster, still-readable pace.
 
-# A real exit's window is NOT a fixed number on this machine -- it varies
-# reboot to reboot, sometimes by a lot, and every attempt below to solve for
-# an exact fit got contradicted by the next real test:
-#
-# 1. keystroke_frames() started applying to every mode the day it was added
-#    for boot, with the exits never re-tuned for its added weight on
-#    capitals and punctuation -- a real reboot cut "They changed something."
-#    off mid-word even though nobody had touched a number below.
-# 2. The OLD flat numbers (3/10/50/25, no keystroke_frames) gave 4.6s, and a
-#    real reboot showed NEITHER exit line -- worse.
-# 3. `journalctl -b -1 | grep -i plymouth` for that reboot -- "Started Show
-#    Plymouth Reboot Screen" to journald's last line -- read as a 2s BUDGET
-#    and tuned to fit under it (1.6s design). Still dead air on the next
-#    reboot: that reading is journald's own shutdown, not the screen's --
-#    journald stops logging before Plymouth's framebuffer actually goes away.
-# 4. Doubling to 3.2s design on the theory the true window was ~2x the
-#    journal figure. Still dead air, timed by eye this time, not journald.
-# 5. Human typing restored for exits, pushed to 5.0s/5.4s design (2 frames a
-#    char, 20/60/20 pauses). This is the one that WORKED: both lines shown in
-#    full, the user's own eye put ~4s of dead air after -- generous, not
-#    tight.
-# 6. Reading that spare 4s as "room to push further" and reusing BOOT's own
-#    slower pace outright (4 frames a char, 45/90/45 -- 8.1s/8.7s design).
-#    The very next real reboot showed ONLY "Deja vu." -- not even the start
-#    of line two. Two lines using less real time (step 5) outlived a slower
-#    pace using more (step 6): the window that reboot was simply shorter than
-#    the one before it, not longer.
-#
-# So (5) is what ships: it is the ONLY configuration that has actually shown
-# both full lines on a real reboot on this machine. It is deliberately NOT
-# tuned to whatever margin that one attempt happened to leave -- (6) shows
-# exactly how that goes wrong. If a real reboot ever cuts a line short again,
-# that is real evidence pace() is too slow; a report of leftover dead air
-# after both lines complete, on its own, is not evidence pace() is too fast --
-# the window moves, and this configuration already has a demonstrated pass.
-#
-# Update: the user timed the real window directly -- ~4s, total, screen-on to
-# screen-change. Every estimate above (journal reading, "spare time" after a
-# pass) was a proxy for this number; this is the number itself. Tuned to
-# 3.1s/3.5s, under it with real margin instead of against it exactly.
-#
-# Update 2: once both lines finish typing, mx_tick() stops advancing and the
-# last frame just sits there -- EXIT_HOLD_PAUSE on the FINAL line changes
-# nothing on screen, because nothing repaints after it. So the ~1s of real
-# window still left after 3.1s/3.5s read as dead air, not as anything typed.
-# The only knob that turns unused margin into visible motion instead of a
-# freeze is the per-character rate. Raised one frame/char -- still well short
-# of (6)'s 8.1s design, the one that got a real reboot to cut the second line
-# -- to spend more of the same ~4s budget typing rather than frozen.
-#
-# Update 3: several real reboots and shutdowns confirmed the window is not
-# just short, it is genuinely RANDOM run to run -- one shutdown showed only
-# "Goodbye, Mr. Anderson.", never reaching line two, no different from what
-# the comments above already expected. Chasing a real-seconds target is
-# therefore pointless; the only thing left to optimise is the SCRIPTED half,
-# so none of it is spent on anything that is not typing or a brief, real
-# read. Three pauses were pure design overhead with no reading or typing
-# happening on screen, and all three came down:
-#   * EXIT_OPEN_PAUSE 5->0: a black beat before the first key has no purpose
-#     on an exit -- there is no "screen waking up" beat to sell here, only a
-#     machine already mid-shutdown.
-#   * EXIT_GAP_PAUSE 6->2: the clear-to-next-line cut (see storyboard's own
-#     "the screen CLEARS before the next one") is a real beat from the film's
-#     own shape, not filler -- kept, but cut to the shortest span that still
-#     reads as a cut rather than a lingering blank.
-#   * EXIT_HOLD_PAUSE 25->18: still a beat to read line one, just not padded
-#     past what a one-line phrase needs.
-# Every one of those frames now goes to typing instead: less padding at the
-# same per-char rate means MORE of a short, random window is spent moving
-# rather than idle -- strictly better odds for line two, not worse. New
-# design totals (from --stage-only): reboot 3.0s, shutdown 3.5s. Still not a
-# real-reboot pass in this exact shape; if a line gets cut short, that is the
-# signal to back EXIT_FRAMES_PER_CHAR down, same as every entry above.
+# Exit windows run short and vary reboot to reboot (a real screen-on to
+# screen-change timing measured ~4 s), so scripted time goes to typing, not
+# padding: no opening black, a 2-frame cut between lines, and a short hold to
+# read line one. The per-character rate keeps both lines inside a ~3-3.5 s
+# design; if a real reboot cuts a line short, slow the rate back down.
 EXIT_FRAMES_PER_CHAR = 3   # -> ~16.7 keystrokes a second: still brisk
 EXIT_OPEN_PAUSE = 0        # no held black -- straight into the first key
 EXIT_HOLD_PAUSE = 18       # 0.36s -- enough to read one short line, no more
@@ -297,64 +229,11 @@ GRANTED_HOLD = 45           # 0.9s
 DENIED_HOLD = 45            # 0.9s
 
 # --- the phosphor halo -------------------------------------------------------
-# The film's monitor is not flat ink: each glyph carries a soft halo, a few
-# pixels wide, of its own colour. Plymouth has no blur at runtime, so the halo
-# is baked here as a blurred twin of every typed line and layered under the
-# crisp core at boot. Same size as the core (blur keeps dimensions), same
-# crop, so no cell math changes: every guard below still measures the CORE.
-#
-# 0x5 baked nearly invisible (~2-3 px once scaled to the on-screen cell), so
-# the lines read flat. The first attempt at wider, 0x18, measured wrong: its
-# cut through a glyph falls only 109 to ~70-90 across 60 px of bake, a flat
-# fog with no bright edge anywhere -- neighbouring halos merge into one haze
-# instead of one bleed per letter. 0x8 kept the gradient (a hot edge that
-# decays outward) but next to the film's own stills it still read thin: the
-# reference bloom is both a bright rim AND a wide soft spread, and one blur
-# radius can only give one or the other -- push it wide enough for the
-# spread and the rim goes flat, exactly what 0x18 showed.
-#
-# So this is the "second tighter inner halo" the note above used to leave in
-# reserve: two blurs of the SAME crisp line, baked and added together (IM's
-# `plus` composite, not Plymouth's -- the sprite still only ever gets ONE
-# flat image, Plymouth has no runtime blend). The tight pass keeps the hot
-# edge close to the ink; the wide pass, dimmed first so it reads as haze and
-# not a second core, carries the spread the single-radius version lacked.
-#
-# Update: 0x20 (sigma 32) was tuned by eye against the word's OUTER silhouette
-# and never checked against a letter's INSIDE. A bowl like the one in `a` or
-# `o` is a few dozen px wide at this bake size, and BOLD (see FONT_FILE) makes
-# it narrower still -- a blur anywhere near that wide bridges straight across
-# it, so the counter reads as a filled blob instead of a hole. Measured
-# against the actual baked core (`Matrix`, the tightest bowls in the boot
-# lines): RADIUS is what closes a bowl -- 0x11/0x12 filled it outright, 0x9
-# left it faint but still open. So the wide pass's radius came down to 0x9,
-# the tight pass to 0x3 to stay proportionate, and both stayed there.
-#
-# Update 2: at 0x9, WEIGHT is the other knob, and 0.35 undershot -- next to
-# the film's stills the whole thing read flat, not just the bowls. 0.5 is
-# the highest weight that still leaves `a` and `o` fully open at 0x9; above
-# that the bowl starts filling again even though the radius did not change.
-# Radius decides WHETHER a bowl can fill, weight decides HOW MUCH of that
-# filling actually shows -- both matter, and both were undershot the first
-# time this got corrected.
-#
-# Update 3: pushed past that ceiling on purpose, to 0.6 -- asked for more
-# bloom than 0.5 gives, accepting that a bowl reads a little softer for it.
-#
-# Update 4: a real reboot photo (grey-washed by the camera, but the bloom
-# itself was plainly still thin next to the reference) showed 0.6/0x9 was
-# STILL undershooting the spread, and that radius/weight were never really
-# the right knobs to trade against a bowl at all -- they were the only ones
-# available. A plain blur cannot tell "just outside the ink" from "inside a
-# small hole surrounded by ink"; it is the same operation everywhere, so
-# widening it always cost a bowl something. A morphological CLOSE can tell
-# them apart: at a radius that bridges a counter but not the much wider gap
-# between two letters, `close(glow_source) - glow_source` is a mask of ONLY
-# the counters. The wide pass is multiplied by the inverse of that mask (see
-# the bake loop below), so it can bloom as generously as the word's outside
-# wants without ever touching a bowl again -- radius and weight are back to
-# being tuned against the OUTSIDE only, the way the very first attempt at
-# this assumed they could be.
+# Two baked blurs of the same crisp line: the tight pass (0x3) keeps the hot
+# rim on the ink, the dimmed wide pass (0x12) carries the spread without
+# merging neighbouring halos into one haze. A CLOSE mask (guard 8) subtracts
+# the letter bowls from the wide pass, so 0x12 and 0.45 tune the word's
+# outside only: visible green bleed, no flat wash, core still crisp at 0.85.
 LINE_GLOW_BLUR = "0x3"          # inner: tight, keeps the bright edge on the ink
 LINE_GLOW_BLUR_WIDE = "0x12"    # outer: contained glow, never a fog bank
 LINE_GLOW_WIDE_WEIGHT = 0.45    # visible green bleed without a flat wash
