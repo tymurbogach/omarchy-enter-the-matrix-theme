@@ -249,7 +249,7 @@ hiding `label-pango` and every font but the three the initramfs would have.
 | `shell.{bar,menu,launcher,notifications}.toml` | Shell section overrides: they give the bar and the cards some relief, which otherwise all paint the same black. |
 | `backgrounds/` | The carousel. `00-pills-hands.jpg` is the default, so installing only the theme still gives you a wallpaper. All of them are stills: film frames and stylised rain. |
 | `live/` | The rain's still, `0-live-rain.png`: thumbnail, marker and fallback in one. It is not in the carousel, so the theme alone never offers it. The pack links it into Omarchy's folder for your own backgrounds of this theme, which Omarchy lists first, so a theme set starts on the rain. The plugin finds it by the `-live-` in its name. |
-| `unlock.png`, `preview-unlock.png` | The static boot mark: what Omarchy's own Appearance › Unlock installs for this theme, and its card there. With the pack, the same card installs the animation instead, where `logo.png` goes invisible and the lines are typed. |
+| `unlock.png`, `preview-unlock.png` | The static boot mark: the typed first line in its pale core with halo, no cursor, and its card there: that line over the framed `enter password` panel with its centred dash row. With the pack, the same card installs the animation instead, where `logo.png` goes invisible and the lines are typed. |
 | `manifest.json`, `Service.qml`, `MatrixRain.qml`, `matrix.frag.qsb`, `glyphs.png` | The plugin. |
 | `provider.json` | The only file that names this provider — slug, plugin ids, Plymouth theme and colours, the lines typed at boot. Everything else is machinery. |
 | `bin/` | `omarchy-matrix`, the one command on PATH (a link to the share dir). |

@@ -4,139 +4,194 @@
     ./tools/generate-brand.py
 
   · unlock.png          the Plymouth boot mark (with alpha; Plymouth paints it
-                        over `background` from colors.toml). A line half typed
-                        out and the cursor: no film logo, no wordmark.
-                        Atmosphere, not branding.
-  · preview-unlock.png  how that splash looks, for Plymouth's own picker.
+                        over black). The film's first line, typed, in the
+                        provider's pale core with its saturated halo. Still
+                        no logo and no wordmark: it is a sentence you read,
+                        not a poster. Atmosphere, not branding.
+  · preview-unlock.png  how that splash looks, for Plymouth's own picker:
+                        the line over the film's framed passphrase panel --
+                        filled title band with `enter password`, hollow
+                        corner widgets, and the content row of short
+                        horizontal dashes the real field answers with.
 
 The theme card `preview.png` is not made here: `generate-showcase.py` composes
 it from real screenshots, so this script must never write it.
 
-Needs rsvg-convert and ImageMagick.
+Needs rsvg-convert and ImageMagick. The two faces ship in `fonts/` and are
+exposed to rsvg through a throwaway fontconfig file, so nothing is installed.
 """
 
+import json
 import os
-import random
 import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE) # outputs land in the repo root, not in tools/
-MONO = "JetBrainsMono Nerd Font, monospace"
-CJK = "Noto Sans CJK JP"
+ROOT = os.path.dirname(HERE)  # outputs land in the repo root, not in tools/
+FONTS_DIR = os.path.join(ROOT, "fonts")
 
-BG = "#020A04"
-ELEVATED = "#0F1E14"
-BAR = "#000200"
-FG = "#B8ECC6"
-BRIGHT = "#DFFFE9"
-DARK_FG = "#3A6B4A"
-ACCENT = "#00FF41"
+COURIER = "Courier Prime"       # the typed lines' face, as in derive-plymouth
+PANEL_FACE = "VT323"            # the panel's own face, as in derive-plymouth
+BAND_INK = "04121A"             # the title band's dark ink, as in derive-plymouth
+BG = "#000000"                  # the splash is black, not themed background
+
+
+def provider_colors():
+    """Core, halo and dialog colours from provider.json, as hex without '#'.
+
+    Falls back the way derive-plymouth does: one colour for everything when
+    the provider names none, so an older provider still gets a coherent mark.
+    """
+    with open(os.path.join(ROOT, "provider.json")) as fh:
+        plymouth = json.load(fh)["plymouth"]
+
+    def section(key, fallback):
+        channels = plymouth.get(key)
+        if not channels:
+            return fallback
+        return "".join(f"{round(channel * 255):02X}" for channel in channels)
+
+    core = section("color", "7BAE4E")
+    return core, section("glowColor", core), section("dialogColor", core)
+
+
+CORE, GLOW, DIALOG = provider_colors()
+
+
+def fontconfig():
+    """A throwaway fontconfig file exposing the repo's `fonts/` to rsvg."""
+    fh = tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False)
+    fh.write(f'''<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <dir>{FONTS_DIR}</dir>
+</fontconfig>
+''')
+    fh.close()
+    return fh.name
 
 
 def render(svg, width, height, output):
     with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False) as fh:
         fh.write(svg)
         path = fh.name
+    conf = fontconfig()
     try:
+        env = dict(os.environ, FONTCONFIG_FILE=conf)
         subprocess.run(["rsvg-convert", "-w", str(width), "-h", str(height),
-                        path, "-o", output], check=True)
+                        path, "-o", output], check=True, env=env)
     finally:
         os.remove(path)
+        os.remove(conf)
 
 
-def rain(w, h, seed, pitch, size, opacity, clear_centre=True):
-    """Background streaks. clear_centre dims them towards the middle so they do
-    not compete with whatever is painted on top."""
-    random.seed(seed)
-    glyphs = [chr(c) for c in range(0x30A1, 0x30FA)]
-    out = []
-    for cx in range(w // pitch + 1):
-        x = cx * pitch + random.randint(-pitch // 4, pitch // 4)
-        from_centre = abs(x - w / 2) / (w / 2)
-        threshold = (0.34 + from_centre * 0.52) if clear_centre else 0.75
-        if random.random() > threshold:
-            continue
-        length = random.randint(6, 16)
-        y0 = random.randint(int(h * 0.1), h)
-        for i in range(length):
-            y = y0 - i * int(size * 1.45)
-            if y < size:
-                break
-            op = max(0.0, (1 - i / length) ** 1.6) * opacity * (
-                (0.4 + from_centre * 0.9) if clear_centre else 1.0)
-            colour = BRIGHT if i == 0 else ACCENT
-            # Mirrored glyphs, the way they are in the film.
-            out.append(
-                f'<text x="0" y="0" transform="translate({x + size},{y}) scale(-1,1)" '
-                f'font-family="{CJK}" font-size="{size}" fill="{colour}" '
-                f'opacity="{op:.3f}">{random.choice(glyphs)}</text>')
-    return "".join(out)
-
-
-PHOSPHOR = f'''
-    <filter id="phosphor" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="6" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+def halo_defs(size):
+    """One halo, the way derive-plymouth bakes it: a tight pass keeping the
+    bright edge on the ink, plus a wider contained one at 0.45 -- combined
+    additively (feComposite arithmetic), not layered, so no opaque band
+    forms where the two overlap."""
+    tight, wide = 0.028 * size, 0.100 * size
+    return f'''
+    <filter id="halo" x="-40%" y="-120%" width="180%" height="340%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="{tight:.1f}" result="t"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="{wide:.1f}" result="w"/>
+      <feComposite in="t" in2="w" operator="arithmetic" k2="1" k3="0.45"/>
     </filter>
 '''
 
 
-def brand(w=1108, h=523, background=None):
-    """The splash mark. `background` of None leaves alpha, which Plymouth needs.
+LIT_CORE = "D8FFFC"              # the core as SEEN: derive-plymouth plus-
+                                # composites core and glow, so the ink inside
+                                # a glyph overexposes to near-white (sampled
+                                # off line-boot-0.png over its glow:
+                                # ~216,255,252, not the raw #B4E3C8)
 
-    The line from the start of the film, typed in a terminal, with its block
-    cursor behind it. Still no logo and no wordmark: it is a sentence you read,
-    not a poster. This used to be "MATRIX" at 104 px with "WAKE UP" underneath,
-    and that did turn the boot into a film poster.
 
-    The cursor lives INSIDE the <text>, as one more character, and the whole
-    line is centred with text-anchor="middle". That way there is no need to
-    guess the font's advance to place it: in a monospace face the block takes
-    exactly one cell and the centring falls out on its own.
-    """
-    base = f'<rect width="{w}" height="{h}" fill="{background}"/>' if background else ""
-
+def typed_line(x, y, size, anchor="middle"):
+    """`Wake up, Neo...`, pale core over a saturated halo. No cursor: the
+    splash types by cropping a picture of the finished line, so nothing
+    trails it (see derive-plymouth)."""
     line = "Wake up, Neo..."
-    size = 72
-    y = 276
+    return f'''
+    <text x="{x}" y="{y}" text-anchor="{anchor}"
+          font-family="{COURIER}" font-weight="bold" font-size="{size}"
+          fill="#{GLOW}" filter="url(#halo)">{line}</text>
+    <text x="{x}" y="{y}" text-anchor="{anchor}"
+          font-family="{COURIER}" font-weight="bold" font-size="{size}"
+          fill="#{LIT_CORE}">{line}</text>
+'''
 
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 1108 523">
-  <defs>{PHOSPHOR}</defs>
-  {base}
-  <g filter="url(#phosphor)">
-    <text x="554" y="{y}" text-anchor="middle" xml:space="preserve"
-          font-family="{MONO}" font-size="{size}" fill="{ACCENT}"
-          letter-spacing="1">{line} <tspan fill="{BRIGHT}">\u2588</tspan></text>
+
+def panel(x, y, w):
+    """The film's framed passphrase panel, in fractions of its width, measured
+    off the derived `box-key.png` (1346x483): filled title band with the
+    tracked caption in dark ink, two hollow squares left and the wide hollow
+    widget right, thin frame with divider, and the content row -- nine short
+    horizontal dashes centred as a group, the way `keydots.png` answers."""
+    u = w / 1346
+    h = 483 * u
+    sw = 7 * u                        # frame stroke
+    m = 3 * u                         # outer transparent margin
+    band_y1 = 128 * u                 # divider between band and content
+    wdg_y0, wdg = 31 * u, 66 * u      # corner widgets' top and height
+    cap_size = 0.06311 * w            # caption spans three fifths of the panel
+    cap_gap = 0.233 * cap_size        # half a panel cell between glyphs
+    dash_cell, dash_n = 57.1 * u, 9
+    dash_w, dash_h = 24 * u, 10 * u
+    dash_y = 270 * u
+    dash_x0 = x + (w - dash_n * dash_cell) / 2 + (dash_cell - dash_w) / 2
+    dashes = "".join(
+        f'<rect x="{dash_x0 + i * dash_cell:.1f}" y="{y + dash_y:.1f}" '
+        f'width="{dash_w:.1f}" height="{dash_h:.1f}" fill="#{DIALOG}"/>'
+        for i in range(dash_n))
+    return f'''
+  <g>
+    <rect x="{x + 6 * u:.1f}" y="{y + 6 * u:.1f}" width="{w - 12 * u:.1f}"
+          height="{band_y1 - 6 * u:.1f}" fill="#{DIALOG}"/>
+    <rect x="{x + m:.1f}" y="{y + m:.1f}" width="{w - 2 * m:.1f}"
+          height="{h - 2 * m:.1f}" fill="none" stroke="#{DIALOG}"
+          stroke-width="{sw:.1f}"/>
+    <line x1="{x + m:.1f}" y1="{y + band_y1:.1f}" x2="{x + w - m:.1f}"
+          y2="{y + band_y1:.1f}" stroke="#{DIALOG}" stroke-width="{sw:.1f}"/>
+    <g fill="none" stroke="#{BAND_INK}" stroke-width="{max(1, 3 * u):.1f}">
+      <rect x="{x + 47 * u:.1f}" y="{y + wdg_y0:.1f}"
+            width="{wdg:.1f}" height="{wdg:.1f}"/>
+      <rect x="{x + 136 * u:.1f}" y="{y + wdg_y0:.1f}"
+            width="{wdg:.1f}" height="{wdg:.1f}"/>
+      <rect x="{x + 1117 * u:.1f}" y="{y + wdg_y0:.1f}"
+            width="{181 * u:.1f}" height="{wdg:.1f}"/>
+    </g>
+    <text x="{x + 0.49108 * w + cap_gap / 2:.1f}"
+          y="{y + 0.04978 * w + 0.22 * cap_size:.1f}" text-anchor="middle"
+          font-family="{PANEL_FACE}" font-size="{cap_size:.1f}"
+          letter-spacing="{cap_gap:.1f}" fill="#{BAND_INK}">enter password</text>
+    {dashes}
   </g>
+'''
+
+
+def brand(w=1108, h=523):
+    """The splash mark. Transparent: Plymouth paints it over black."""
+    size = 0.0938 * w
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 1108 523">
+  <defs>{halo_defs(size)}</defs>
+  {typed_line(554, int(0.528 * h), round(size))}
 </svg>'''
 
 
 def preview_unlock(w=1920, h=1080):
-    """The splash as it looks: the mark centred and the password field."""
-    cx, cy = w / 2, h * 0.46
-    mw, mh = 1108, 523
-    campo_y = h * 0.74
+    """The splash as it looks: the typed line over the passphrase panel."""
+    line_w = 15 / 21 * 0.32 * w       # this line's share of the typed width
+    size = line_w / (15 * 0.6028)     # Courier Prime Bold is a 0.6 face
+    panel_w = 0.30 * w
+    panel_h = 483 / 1346 * panel_w
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">
-  <defs>{PHOSPHOR}</defs>
+  <defs>{halo_defs(size)}</defs>
   <rect width="{w}" height="{h}" fill="{BG}"/>
-  <g transform="translate({cx - mw/2},{cy - mh/2})">
-    {brand().split('</defs>')[1].rsplit('</svg>')[0]}
-  </g>
-  <g>
-    <rect x="{cx - 150}" y="{campo_y}" width="300" height="42" rx="6"
-          fill="{ELEVATED}" stroke="{ACCENT}" stroke-opacity="0.45"/>
-    <rect x="{cx - 176}" y="{campo_y + 11}" width="14" height="11" rx="2" fill="{DARK_FG}"/>
-    <path d="M {cx - 173} {campo_y + 11} v -4 a 4 4 0 0 1 8 0 v 4"
-          fill="none" stroke="{DARK_FG}" stroke-width="2"/>
-    <g fill="{FG}">
-      <circle cx="{cx - 124}" cy="{campo_y + 21}" r="4"/>
-      <circle cx="{cx - 108}" cy="{campo_y + 21}" r="4"/>
-      <circle cx="{cx - 92}"  cy="{campo_y + 21}" r="4"/>
-      <circle cx="{cx - 76}"  cy="{campo_y + 21}" r="4"/>
-    </g>
-  </g>
+  {typed_line(f"{0.055 * w:.1f}", f"{0.085 * h + 0.572 * size:.1f}",
+              round(size, 1), anchor="start")}
+  {panel((w - panel_w) / 2, 0.684 * h, panel_w)}
 </svg>'''
 
 
