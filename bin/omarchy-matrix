@@ -594,10 +594,6 @@ status_row() { # <on|off> <piece> <text>
 # the machinery. After `omarchy refresh shell` wiped shell.json, a status that
 # read settings ticked a lock that Omarchy's own lock had replaced.
 cmd_status() {
-  # Up to 1.2.x, `status --is <piece>` answered yes or no, and scripts of the
-  # user's own may still ask it. An option ignored here would answer yes to
-  # every question, so any option fails.
-  (($# == 0)) || fail "status takes no options (the pieces have no switches since 1.3)"
   local version
   version=$(pack_version)
   printf '  %s%s\n\n' "$DISPLAY_NAME" "${version:+ $version}"
@@ -653,12 +649,22 @@ cmd_status() {
   fi
 }
 
+# 2.0 needs Omarchy 4.5 and no uncleaned 1.x install (lib/pack.sh). Doctor and
+# friends say so out loud; hooks stay silent and do nothing.
+require_pack_runtime() {
+  local version
+  version=$(omarchy version 2>/dev/null || echo unknown)
+  pack_version_ok || fail "this pack needs Omarchy 4.5 or newer (this is $version). Update Omarchy first."
+  if legacy_install_present; then
+    fail "Desinstala 1.x primero: $CLI uninstall, después instala 2.0"
+  fi
+}
+
 # Asserts everything again. This is what to run after an `omarchy refresh
 # shell`, which rewrites shell.json and leaves the plugin off.
 cmd_doctor() {
   local failures=0 theme
   begin_changes
-  pack_migrate
   sync_files
   # The rain's background belongs to the theme's own list, so it is offered
   # whichever theme is current. Omarchy shows it only under this theme.
@@ -698,7 +704,6 @@ cmd_suspend() {
   leaving=$(current_theme)
   [[ -z $leaving || $leaving == "$SLUG" ]] || remember_previous_theme "$leaving"
   begin_changes
-  pack_migrate
   stand_down
   finish_changes
 }
@@ -709,18 +714,6 @@ cmd_boot() {
   off) boot_off ;;
   *) fail "use: $SELF boot on, or $SELF boot off" ;;
   esac
-}
-
-# Up to 1.2.x each piece had a switch. Say where each choice lives now, rather
-# than "unknown command" to somebody who follows an older README.
-no_switches() {
-  cat >&2 <<EOF
-$SELF: the pieces have no switches any more. Omarchy's own menus decide:
-  desktop rain   Appearance › Background, the rain
-  boot splash    Appearance › Unlock, the $DISPLAY_NAME card
-The lock and the screensaver rain whenever the $DISPLAY_NAME theme is on.
-EOF
-  exit 1
 }
 
 usage() {
@@ -750,15 +743,18 @@ shift || true
 
 case "$command" in
 status) cmd_status "$@" ;;
-doctor) cmd_doctor ;;
-update) cmd_update "$@" ;;
-boot) cmd_boot "$@" ;;
-suspend) cmd_suspend ;;
+doctor) require_pack_runtime; cmd_doctor ;;
+update) require_pack_runtime; cmd_update "$@" ;;
+boot) require_pack_runtime; cmd_boot "$@" ;;
+suspend) require_pack_runtime; cmd_suspend ;;
 uninstall) exec "$ROOT/uninstall.sh" "$@" ;;
 hook)
   # What the generated hooks call back into. Not for hands: no output, no
-  # questions, failures swallowed the way a hook expects.
+  # questions, failures swallowed the way a hook expects. On an Omarchy older
+  # than 4.5, or with a 1.x install still around, the pack does nothing.
   event="${1:-}"; shift || true
+  pack_version_ok || exit 0
+  if legacy_install_present; then exit 0; fi
   case "$event" in
   theme-set) cmd_hook_theme_set "$@" ;;
   theme-remove) cmd_hook_theme_remove ;;
@@ -766,7 +762,6 @@ hook)
   *) fail "unknown hook: $event" ;;
   esac
   ;;
-on | off | wallpaper | screensaver | lock | widget) no_switches ;;
 -h | --help | help) usage ;;
 *) usage >&2; exit 1 ;;
 esac

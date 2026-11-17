@@ -31,6 +31,9 @@ and you keep the theme alone.
 A theme from git may not run code when Omarchy installs it, so the pack is the
 second half of the line. For the theme alone, run only the first half.
 
+From 1.x: run `omarchy-matrix uninstall` first, then install 2.0. The 2.0
+pack migrates nothing from 1.x and refuses to install over it.
+
 `omarchy plugin add <this repo>` is not a way in. The manifest is at the root,
 so it looks like it should work, but it installs the whole repository as the
 plugin and skips the CLI and the hooks.

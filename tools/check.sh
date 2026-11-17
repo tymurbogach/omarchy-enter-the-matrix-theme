@@ -527,12 +527,16 @@ source.mkdir()
   "omarchy": {"clonePaths": [{"source": "old", "target": "new"}]}
 }\n''')
 (source / "Service.qml").write_text("Item {}\n")
+# Omarchy 4.5 draws the wallpaper with BackgroundMedia (4.0 used Image, which
+# this pack no longer patches). The patch finds the element by its id.
 (source / "LockView.qml").write_text('''Item {
-  Image {
+  BackgroundMedia {
     id: wallpaper
-    source: "wallpaper"
+    path: "wallpaper"
   }
-  MultiEffect {}
+  MultiEffect {
+    source: wallpaper
+  }
 }
 ''')
 rain_source = tmp / "rain"
@@ -556,31 +560,13 @@ assert new_manifest["omarchy"] == {
 derived_lock = (new_target / "LockView.qml").read_text()
 assert "CheckRain" in derived_lock and "id: wallpaper" not in derived_lock, \
     "new clone was not patched before publication"
-
-# Omarchy 4.5 draws the wallpaper with BackgroundMedia, not Image (4.0), with
-# the same MultiEffect blur behind it. The patch finds the element by its id,
-# whatever the accepted type is.
-(source / "LockView.qml").write_text('''Item {
-  BackgroundMedia {
-    id: wallpaper
-    path: "wallpaper"
-  }
-  MultiEffect {
-    source: wallpaper
-  }
-}
-''')
-assert m.stage_clone(tmp / "plugins/new45.lock", "new45.lock", rain_source), "BackgroundMedia clone was not published"
-derived_lock = (tmp / "plugins/new45.lock/LockView.qml").read_text()
-assert "CheckRain" in derived_lock and "id: wallpaper" not in derived_lock, \
-    "BackgroundMedia clone was not patched before publication"
 import re as _re
 code_only = "\n".join(line for line in derived_lock.splitlines()
                       if not _re.match(r"^[ \t]*//", line))
 assert "wallpaper" not in code_only, \
-    "BackgroundMedia clone keeps a reference to the removed wallpaper element"
+    "new clone keeps a reference to the removed wallpaper element"
 assert "MultiEffect" not in derived_lock, \
-    "BackgroundMedia clone keeps the blur that covered the wallpaper"
+    "new clone keeps the blur that covered the wallpaper"
 
 # The real installed lock, when this machine has one: derive into a temp dir
 # (never the live plugins dir) and check the same two properties. Skip with
@@ -657,19 +643,6 @@ source_text = Path(deriver).read_text()
 assert "omarchy-plugin-clone" not in source_text, "deriver still runs omarchy-plugin-clone"
 assert "rescanPlugins" not in source_text, "deriver still forces a plugin rescan"
 PY
-    # clean_legacy_bins takes back only files that carry the pack's marker.
-    # SC2034: clean_legacy_bins (in lib/pack.sh) reads SHARE_DIR.
-    # shellcheck disable=SC2034
-    BIN_DIR="$tmp/bin" SHARE_DIR="$tmp/share"
-    mkdir -p "$BIN_DIR/__pycache__"
-    echo "from provider import PROVIDER" >"$BIN_DIR/derive-lock.py"
-    echo "print('mine')" >"$BIN_DIR/provider.py"
-    touch "$BIN_DIR/__pycache__/provider.cpython-314.pyc" "$BIN_DIR/__pycache__/other.cpython-314.pyc"
-    clean_legacy_bins
-    [[ ! -e $BIN_DIR/derive-lock.py ]] || { echo "  FAIL: the old deriver stayed on PATH" >&2; exit 1; }
-    [[ -f $BIN_DIR/provider.py ]] || { echo "  FAIL: a provider.py of the user's own was deleted" >&2; exit 1; }
-    [[ -f $BIN_DIR/__pycache__/other.cpython-314.pyc ]] || { echo "  FAIL: bytecode of another program was deleted" >&2; exit 1; }
-    [[ ! -e $BIN_DIR/__pycache__/provider.cpython-314.pyc ]] || { echo "  FAIL: the pack's bytecode stayed" >&2; exit 1; }
   ) || failures=$((failures + 1))
 }
 
@@ -694,7 +667,7 @@ check_menu() {
     slug=$(jq -r .slug "$ROOT/provider.json")
     cli="$HOME/.local/bin/$(jq -r .cli "$ROOT/provider.json")"
 
-    # Both Omarchy row names must derive the same safe action.
+    # The Unlock row must derive the same safe action.
     python3 - "$ROOT/lib/derive-menu.py" <<'PYCODE' || exit 1
 import runpy, sys
 module = runpy.run_path(sys.argv[1])
@@ -730,12 +703,9 @@ raw = re.sub(r",(\s*[}\]])", r"\1", raw)
 print(json.loads(raw)[sys.argv[2]]["action"])
 PY
     }
-    unlock_id=$(python3 - "$omarchy/default/omarchy/omarchy-menu.jsonc" <<'PYCODE'
-import re, sys
-raw = open(sys.argv[1], encoding="utf-8").read()
-print("appearance.unlock" if re.search(r'"appearance\.unlock"\s*:', raw) else "style.unlock")
-PYCODE
-    )
+    unlock_id="appearance.unlock"
+    grep -q '"appearance\.unlock"' "$omarchy/default/omarchy/omarchy-menu.jsonc" ||
+      { echo "  FAIL: Omarchy's menu has no appearance.unlock row" >&2; exit 1; }
     action=$(row_action "$unlock_id") && remove=$(row_action remove.theme) ||
       { echo "  FAIL: the menu does not parse the way Omarchy parses it" >&2; exit 1; }
 
@@ -743,11 +713,6 @@ PYCODE
     want="omarchy-theme-remove; [[ ! -x '$cli' ]] || '$cli' hook theme-remove"
     [[ $remove == "$want" ]] || { echo "  FAIL: remove.theme runs [$remove], want [$want]" >&2; exit 1; }
     bash -n -c "$remove" || { echo "  FAIL: remove.theme is not a command that bash can read" >&2; exit 1; }
-
-    # A block from 1.3.0, under its old first line, gives way to the new one.
-    sed -i "s|^  // >>> $slug: rows of Omarchy's menu,|  // >>> $slug: Style > Unlock,|" "$menu"
-    "$ROOT/lib/derive-menu.py" >/dev/null && [[ $(cat "$menu") == "$first" ]] ||
-      { echo "  FAIL: a block from 1.3.0 did not give way to the new one" >&2; exit 1; }
 
     printf '#!/bin/bash\necho "$CHOICE"\n' >"$tmp/fake/omarchy-plymouth-switcher"
     printf '#!/bin/bash\nprintf "%%s" "$*" >"$OUT"\n' >"$tmp/fake/omarchy-launch-floating-terminal-with-presentation"
@@ -1037,9 +1002,8 @@ PY
 # Omarchy 4.5 renamed the Style group to Appearance (rows appearance.theme,
 # appearance.background and appearance.unlock; Remove is remove.theme, on its
 # own). No user-facing string may still name the old group. The old name
-# survives in exactly two lines: the 1.3.0 block marker kept as compat in
-# lib/derive-menu.py (OLD_BEGIN) and the migration fixture in check_menu that
-# rewrites that marker before it derives.
+# survives in exactly one line: the 1.x block marker that legacy_install_present
+# matches in lib/pack.sh, which refuses to install over a 1.x install.
 # The two grep needles are built from a prefix so that this file holds no
 # literal of its own for the check to trip over.
 
@@ -1052,8 +1016,7 @@ check_menu_names() {
     return 0
   fi
   rest=$(printf '%s\n' "$hits" \
-    | grep -v -e '^lib/derive-menu.py:.*OLD_BEGIN' \
-               -e "^tools/check.sh:.*rows of Omarchy's menu," || true)
+    | grep -v -e "^lib/pack.sh:.*$prefix > Unlock" || true)
   if [[ -n ${rest//[[:space:]]/} ]]; then
     printf '%s\n' "$rest" >&2
     fail "user-facing text still names the Style menu group"

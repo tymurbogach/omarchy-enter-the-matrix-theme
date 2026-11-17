@@ -80,11 +80,11 @@ def end_of_block(text, start):
 
 
 def patch(text):
-    wallpaper = [m for m in re.finditer(r"^[ \t]*(Image|BackgroundMedia)\s*\{", text, re.M)
+    wallpaper = [m for m in re.finditer(r"^[ \t]*BackgroundMedia\s*\{", text, re.M)
                  if re.search(r"\bid:\s*wallpaper\b", text[m.start():end_of_block(text, m.start())])]
     if len(wallpaper) != 1:
         die(
-            f"expected exactly one wallpaper element (`Image` or `BackgroundMedia` "
+            f"expected exactly one wallpaper element (`BackgroundMedia` "
             f"with `id: wallpaper`) in LockView.qml, found "
             f"{len(wallpaper)}. Omarchy's lock has changed: leaving it alone.\n"
             f"  Please open an issue at {PROVIDER['repoUrl']} "

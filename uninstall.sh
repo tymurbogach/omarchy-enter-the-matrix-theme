@@ -58,10 +58,6 @@ esac
 KEEP_THEME=0
 [[ ${1:-} != "--keep-theme" ]] || KEEP_THEME=1
 
-# An install older than 1.3 kept a switch per piece in a settings file, and the
-# screensaver flag that it set must go back first (lib/pack.sh).
-retire_settings
-
 # Read before anything is deleted: the theme step-off at the very bottom needs
 # it, and the share dir that holds it goes long before then. The theme-set hook
 # records it every time you pick another theme, because Omarchy overwrites
@@ -82,8 +78,6 @@ done
 
 echo "· removing the rain plugin"
 remove_plugin "$PLUGIN_ID"
-# An install older than 1.3 also had a bar widget.
-retire_widget
 
 # Appearance > Unlock and Remove > Theme go back to Omarchy's own rows
 # (lib/derive-menu.py). An older install has no such block, and no deriver to
@@ -176,7 +170,6 @@ prune_backups
 echo "· removing hooks, the CLI and the share dir"
 rm -f "$HOOKS/theme-set.d/$SLUG" "$HOOKS/post-update.d/$SLUG"
 rm -f "$BIN_DIR/$CLI"
-clean_legacy_bins
 # Where install.sh keeps the CLI, its python, provider.json and this script.
 # Unlinking the running script is safe -- the open inode survives to the last
 # line -- but truncating it is not, so never rewrite it here.

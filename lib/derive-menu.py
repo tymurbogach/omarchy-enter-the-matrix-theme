@@ -53,13 +53,9 @@ USER_MENU = HOME / ".config/omarchy/extensions/omarchy-menu.jsonc"
 SLUG = PROVIDER["slug"]
 CLI = HOME / ".local/bin" / PROVIDER["cli"]
 BEGIN = f"// >>> {SLUG}: rows of Omarchy's menu, managed by {PROVIDER['cli']}. Do not edit."
-# 1.3.0 wrote its block under this first line as its then-current BEGIN; the
-# rename kept it as compat so direct 1.3.0 upgraders migrate. Removal belongs
-# to the F19 2.0 cut.
-OLD_BEGIN = f"// >>> {SLUG}: Style > Unlock, managed by {PROVIDER['cli']}. Do not edit."
 END = f"// <<< {SLUG}"
 
-UNLOCK_IDS = ("appearance.unlock", "style.unlock")
+UNLOCK_IDS = ("appearance.unlock",)
 REMOVE = "remove.theme"
 
 # Appearance > Unlock: the three places that the patch goes, as Omarchy writes them
@@ -123,7 +119,7 @@ def patch_remove(action):
 
 
 def patches_for(menu):
-    # Omarchy 4.5 renamed the row. Prefer its current id when both exist.
+    # 2.0 targets Omarchy 4.5, whose row id is appearance.unlock.
     unlock = next((row_id for row_id in UNLOCK_IDS if row_id in menu), UNLOCK_IDS[0])
     return {unlock: patch_unlock, REMOVE: patch_remove}
 
@@ -151,7 +147,7 @@ def without_block(text):
     out, inside = [], False
     for line in text.splitlines(keepends=True):
         stripped = line.strip()
-        if stripped in (BEGIN, OLD_BEGIN):
+        if stripped == BEGIN:
             inside = True
         elif inside and stripped == END:
             inside = False
@@ -198,7 +194,7 @@ def main():
     mode = USER_MENU.stat().st_mode & 0o777 if current is not None else 0o644
 
     if "--remove" in sys.argv[1:]:
-        if current is not None and (BEGIN in current or OLD_BEGIN in current):
+        if current is not None and BEGIN in current:
             write(without_block(current), mode)
             print("Handed Omarchy's menu rows back")
         return

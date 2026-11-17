@@ -39,6 +39,15 @@ PROVIDER="$HERE/provider.json"
 . "$HERE/lib/pack.sh" || { echo "cannot load $HERE/lib/pack.sh" >&2; exit 1; }
 pack_load_provider "$PROVIDER" || exit 1
 pack_set_paths
+
+# 2.0 needs Omarchy 4.5, and it migrates nothing from 1.x: refuse before
+# writing anything.
+version=$(omarchy version 2>/dev/null || echo unknown)
+pack_version_ok || { echo "this pack needs Omarchy 4.5 or newer (this is $version). Update Omarchy first." >&2; exit 1; }
+if legacy_install_present; then
+  echo "Desinstala 1.x primero: $CLI uninstall, después instala 2.0" >&2
+  exit 1
+fi
 mapfile -t PLUGIN_FILES < <(jq -r '.plugin.files[]' "$PROVIDER")
 
 # `omarchy theme install` names the theme's folder after the REPO -- basename of
@@ -249,8 +258,6 @@ install -m 644 "$PROVIDER" "$SHARE_DIR/provider.json"
 install -m 755 "$HERE/uninstall.sh" "$SHARE_DIR/uninstall.sh"
 ln -sfn "$SHARE_DIR/bin/$CLI" "$BIN_DIR/$CLI"
 
-clean_legacy_bins
-
 # --- the hooks --------------------------------------------------------------
 # theme-set: brings the pack up when you pick this theme, stands it down when
 # you pick anything else.
@@ -286,14 +293,10 @@ fi
 
 # --- bring it up --------------------------------------------------------------
 
-# A screensaver-off flag that is already here on a first install is the user's
-# own, so release_screensaver_flag (lib/pack.sh) must leave it alone.
-if ((FIRST_INSTALL)); then touch "$SHARE_DIR/.screensaver-v2"; fi
-prune_backups
-
-# doctor brings the pieces up, takes back what an older version left, and
-# restarts the shell once if the shell has something to unload.
+# doctor brings the pieces up and restarts the shell once if the shell has
+# something to unload.
 problems=0
+prune_backups
 OMARCHY_MATRIX_RESTART=$replaced_live "$BIN_DIR/$CLI" doctor >/dev/null || problems=1
 
 in_effect=0
