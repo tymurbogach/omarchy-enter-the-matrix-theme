@@ -134,9 +134,11 @@ installed_pairs() {
   echo "$theme/lib/provider.py|$SHARE_DIR/lib/provider.py"
   echo "$theme/lib/pack.sh|$SHARE_DIR/lib/pack.sh"
   echo "$theme/uninstall.sh|$SHARE_DIR/uninstall.sh"
-  # The hooks are deliberately ABSENT: install.sh generates their wrappers on
-  # every run (including the --sync this function ends up calling), so there
-  # is no theme source to compare and nothing to go stale.
+  # The initcpio sources are compared too: a pull changing only the hook must
+  # resync, or `boot on` would install a stale hook.
+  echo "$theme/initcpio/hooks/omarchy-matrix-backlight|$SHARE_DIR/initcpio/hooks/omarchy-matrix-backlight"
+  echo "$theme/initcpio/install/omarchy-matrix-backlight|$SHARE_DIR/initcpio/install/omarchy-matrix-backlight"
+  echo "$theme/initcpio/99-omarchy-matrix-backlight.conf|$SHARE_DIR/initcpio/99-omarchy-matrix-backlight.conf"
   echo "$theme/provider.json|$SHARE_DIR/provider.json"
 }
 
@@ -728,8 +730,8 @@ Usage: $SELF <command>
   status                      What the pack does right now
   doctor                      Put everything back, for example after
                               'omarchy refresh shell'
-  update [--check]            Pull the latest version of this theme, then
-                              doctor. --check only looks
+  update --check|<full-sha>   Apply the named full commit SHA, then doctor.
+                              --check only shows the candidate
   boot on|off                 The Matrix boot splash, as Appearance › Unlock sets
                               it. Needs sudo
   uninstall [--keep-theme]    Remove the pack, and the theme unless

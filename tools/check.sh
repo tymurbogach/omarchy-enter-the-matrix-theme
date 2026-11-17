@@ -425,6 +425,45 @@ PY
   fi
 }
 
+# --- theme sync ---------------------------------------------------------------
+# doctor --sync fires when the theme directory moves on. A pull that touches
+# only the initcpio hook must resync too, or `boot on` installs a stale hook.
+# Runs the real files_outdated with a scratch HOME, so the share dir stays in
+# a mktemp dir and nothing real is read or written.
+
+check_sync_files() {
+  section "theme sync notices newer initcpio sources"
+  local tmp share
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/home" "$tmp/theme/initcpio/hooks" "$tmp/theme/initcpio/install"
+  share="$tmp/home/.local/share/$(jq -r .cli "$ROOT/provider.json")"
+  mkdir -p "$share/initcpio/hooks" "$share/initcpio/install"
+  # A newer provider.json in the theme is staleness, as before.
+  printf '{}\n' >"$tmp/theme/provider.json"
+  printf '{}\n' >"$share/provider.json"
+  touch -d '2026-01-01 00:00:00' "$share/provider.json"
+  touch -d '2026-01-02 00:00:00' "$tmp/theme/provider.json"
+  if ! HOME="$tmp/home" THEME_DIR="$tmp/theme" bash -c '
+    source "$0" -h >/dev/null
+    files_outdated "$THEME_DIR"
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "files_outdated misses a newer provider.json"
+  fi
+  # Same age everywhere except the initcpio hook: only its newness may report.
+  touch -d '2026-01-01 00:00:00' "$tmp/theme/provider.json"
+  printf 'hook\n' >"$tmp/theme/initcpio/hooks/omarchy-matrix-backlight"
+  printf 'hook\n' >"$share/initcpio/hooks/omarchy-matrix-backlight"
+  touch -d '2026-01-01 00:00:00' "$share/initcpio/hooks/omarchy-matrix-backlight"
+  touch -d '2026-01-02 00:00:00' "$tmp/theme/initcpio/hooks/omarchy-matrix-backlight"
+  if ! HOME="$tmp/home" THEME_DIR="$tmp/theme" bash -c '
+    source "$0" -h >/dev/null
+    files_outdated "$THEME_DIR"
+  ' "$ROOT/bin/omarchy-matrix"; then
+    fail "files_outdated misses a newer initcpio hook"
+  fi
+}
+
 # --- M4 ownership fixtures ---------------------------------------------------
 # The one rule, in both languages: clonedFrom == omarchy.lock AND
 # (derivedBy == cli OR the rain QML inside). A hand-made clone matches only the
@@ -1004,6 +1043,7 @@ check_repo_hygiene
 check_early_backlight
 check_early_backlight_removal
 check_early_backlight_paths
+check_sync_files
 check_ownership
 check_menu
 check_menu_names
