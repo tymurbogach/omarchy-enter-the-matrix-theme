@@ -1014,7 +1014,7 @@ check_boot_leftovers() {
 check_menu_names() {
   section "menu names follow Appearance, not Style"
   local prefix="Style" hits rest
-  hits=$(git -C "$ROOT" ls-files -z -- . ':!PICTURES TEST' ':!boot splash objective' |
+  hits=$(git -C "$ROOT" ls-files -z -- . |
     (cd "$ROOT" && xargs -0 -r grep -Hn -I -e "$prefix ›" -e "$prefix >" || true))
   if [[ -z $hits ]]; then
     return 0
